@@ -33,6 +33,7 @@ import (
 	log "github.com/Sirupsen/logrus"
 	"github.com/codegangsta/negroni"
 	"github.com/julienschmidt/httprouter"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/intelsdi-x/snap/core"
 	"github.com/intelsdi-x/snap/core/cdata"
@@ -109,7 +110,7 @@ type Server struct {
 	err  chan error
 }
 
-func New(https bool, cpath, kpath string) (*Server, error) {
+func New(https bool, cpath, kpath string, opts ...ServerOpt) (*Server, error) {
 	s := &Server{
 		err: make(chan error),
 	}
@@ -132,7 +133,22 @@ func New(https bool, cpath, kpath string) (*Server, error) {
 	s.r = httprouter.New()
 	// Use negroni to handle routes
 	s.n.UseHandler(s.r)
+
+	// process options
+	for _, opt := range opts {
+		opt(s)
+	}
+
 	return s, nil
+}
+
+type ServerOpt func(s *Server)
+
+func EnableInstrumentation() ServerOpt {
+	return func(s *Server) {
+		restLogger.Info("enabling instrumentation (route: /debug/metrics)")
+		s.r.Handler("GET", "/debug/metrics", prometheus.Handler())
+	}
 }
 
 func (s *Server) Start(addrString string) error {

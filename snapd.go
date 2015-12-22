@@ -45,6 +45,10 @@ import (
 )
 
 var (
+	flEnableInstrumentation = cli.BoolFlag{
+		Name:  "enable-instrumentation, i",
+		Usage: "Enable instrumentation",
+	}
 	flAPIDisabled = cli.BoolFlag{
 		Name:  "disable-api, d",
 		Usage: "Disable the agent REST API",
@@ -155,6 +159,7 @@ func main() {
 	app.Version = gitversion
 	app.Usage = "A powerful telemetry framework"
 	app.Flags = []cli.Flag{
+		flEnableInstrumentation,
 		flAPIDisabled,
 		flAPIPort,
 		flLogLevel,
@@ -487,7 +492,11 @@ func action(ctx *cli.Context) {
 
 	//API
 	if !disableAPI {
-		r, err := rest.New(restHttps, restCert, restKey)
+		serverOpts := []rest.ServerOpt{}
+		if ctx.Bool("enable-instrumentation") {
+			serverOpts = append(serverOpts, rest.EnableInstrumentation())
+		}
+		r, err := rest.New(restHttps, restCert, restKey, serverOpts...)
 		if err != nil {
 			log.Fatal(err)
 			return
