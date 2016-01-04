@@ -297,7 +297,12 @@ func action(ctx *cli.Context) {
 	if isTribeEnabled {
 		log.Info("Tribe is enabled")
 		tc := tribe.DefaultConfig(tribeNodeName, tribeAddr, tribePort, tribeSeed, apiPort)
-		t, err := tribe.New(tc)
+		opts := []tribe.Opt{}
+		if ctx.Bool("enable-instrumentation") {
+			opts = append(opts, tribe.EnableCounters())
+		}
+		t, err := tribe.New(tc, opts...)
+
 		if err != nil {
 			printErrorAndExit(t.Name(), err)
 		}

@@ -20,27 +20,24 @@ limitations under the License.
 package tribe
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"math"
-	"net"
 	"strconv"
 	"sync"
 	"time"
 
 	log "github.com/Sirupsen/logrus"
+	"github.com/hashicorp/memberlist"
 	"github.com/intelsdi-x/gomit"
+	"github.com/pborman/uuid"
+
 	"github.com/intelsdi-x/snap/core"
 	"github.com/intelsdi-x/snap/core/control_event"
 	"github.com/intelsdi-x/snap/core/scheduler_event"
 	"github.com/intelsdi-x/snap/core/serror"
 	"github.com/intelsdi-x/snap/mgmt/tribe/agreement"
 	"github.com/intelsdi-x/snap/mgmt/tribe/worker"
-	"github.com/pborman/uuid"
-
-	"github.com/hashicorp/go-msgpack/codec"
-	"github.com/hashicorp/memberlist"
 )
 
 const (
@@ -79,6 +76,7 @@ type tribe struct {
 	members            map[string]*agreement.Member
 	tags               map[string]string
 	config             *config
+	counters           *counters
 
 	pluginCatalog   worker.ManagesPlugins
 	taskManager     worker.ManagesTasks
@@ -97,6 +95,20 @@ type config struct {
 	MemberlistConfig          *memberlist.Config
 }
 
+type Opt func(*tribe)
+
+func EnableCounters() Opt {
+	return func(t *tribe) {
+		t.counters = newCounters()
+	}
+}
+
+func DisableCounters() Opt {
+	return func(t *tribe) {
+		t.counters = nil
+	}
+}
+
 func DefaultConfig(name, advertiseAddr string, advertisePort int, seed string, restAPIPort int) *config {
 	c := &config{
 		seed:         seed,
@@ -109,10 +121,11 @@ func DefaultConfig(name, advertiseAddr string, advertisePort int, seed string, r
 	c.MemberlistConfig.BindAddr = advertiseAddr
 	c.MemberlistConfig.BindPort = advertisePort
 	c.MemberlistConfig.GossipNodes = c.MemberlistConfig.GossipNodes * 2
+
 	return c
 }
 
-func New(c *config) (*tribe, error) {
+func New(c *config, opts ...Opt) (*tribe, error) {
 	logger := logger.WithFields(log.Fields{
 		"port": c.MemberlistConfig.BindPort,
 		"addr": c.MemberlistConfig.BindAddr,
@@ -147,7 +160,7 @@ func New(c *config) (*tribe, error) {
 	}
 
 	//configure delegates
-	c.MemberlistConfig.Delegate = &delegate{tribe: tribe}
+	c.MemberlistConfig.Delegate = newDelegate(tribe)
 	c.MemberlistConfig.Events = &memberDelegate{tribe: tribe}
 
 	ml, err := memberlist.Create(c.MemberlistConfig)
@@ -156,6 +169,10 @@ func New(c *config) (*tribe, error) {
 		return nil, err
 	}
 	tribe.memberlist = ml
+
+	for _, opt := range opts {
+		opt(tribe)
+	}
 
 	if c.seed != "" {
 		_, err := ml.Join([]string{c.seed})
@@ -297,30 +314,6 @@ func (t *tribe) GetPluginAgreementMembers() ([]worker.Member, error) {
 	return members, nil
 }
 
-// encodeTags
-func (t *tribe) encodeTags(tags map[string]string) []byte {
-	var buf bytes.Buffer
-	enc := codec.NewEncoder(&buf, &codec.MsgpackHandle{})
-	if err := enc.Encode(tags); err != nil {
-		panic(fmt.Sprintf("Failed to encode tags: %v", err))
-	}
-	return buf.Bytes()
-}
-
-// decodeTags is used to decode a tag map
-func (t *tribe) decodeTags(buf []byte) map[string]string {
-	tags := make(map[string]string)
-	r := bytes.NewReader(buf)
-	dec := codec.NewDecoder(r, &codec.MsgpackHandle{})
-	if err := dec.Decode(&tags); err != nil {
-		t.logger.WithFields(log.Fields{
-			"_block": "decode-tags",
-			"error":  err,
-		}).Error("Failed to decode tags")
-	}
-	return tags
-}
-
 // HandleGomitEvent handles events emitted from control
 func (t *tribe) HandleGomitEvent(e gomit.Event) {
 	logger := t.logger.WithFields(log.Fields{
@@ -444,22 +437,6 @@ func (t *tribe) HandleGomitEvent(e gomit.Event) {
 			}
 		}
 	}
-}
-
-// broadcast takes a tribe message type, encodes it for the wire, and queues
-// the broadcast. If a notify channel is given, this channel will be closed
-// when the broadcast is sent.
-func (t *tribe) broadcast(mt msgType, msg interface{}, notify chan<- struct{}) error {
-	raw, err := encodeMessage(mt, msg)
-	if err != nil {
-		return err
-	}
-
-	t.broadcasts.QueueBroadcast(&broadcast{
-		msg:    raw,
-		notify: notify,
-	})
-	return nil
 }
 
 func (t *tribe) GetMember(name string) *agreement.Member {
@@ -667,8 +644,8 @@ func (t *tribe) RemoveAgreement(name string) serror.SnapError {
 	return nil
 }
 
-func (t *tribe) TaskStateQuery(agreementName string, taskId string) core.TaskState {
-	resp := t.taskStateQuery(agreementName, taskId)
+func (t *tribe) TaskStateQuery(agreementName string, taskID string) core.TaskState {
+	resp := t.taskStateQuery(agreementName, taskID)
 
 	responses := taskStateResponses{}
 	for r := range resp.resp {
@@ -676,6 +653,22 @@ func (t *tribe) TaskStateQuery(agreementName string, taskId string) core.TaskSta
 	}
 
 	return responses.State()
+}
+
+// broadcast takes a tribe message type, encodes it for the wire, and queues
+// the broadcast. If a notify channel is given, this channel will be closed
+// when the broadcast is sent.
+func (t *tribe) broadcast(mt msgType, msg interface{}, notify chan<- struct{}) error {
+	raw, err := encodeMessage(mt, msg)
+	if err != nil {
+		return err
+	}
+
+	t.broadcasts.QueueBroadcast(&broadcast{
+		msg:    raw,
+		notify: notify,
+	})
+	return nil
 }
 
 func (t *tribe) taskStateQuery(agreementName string, taskId string) *taskStateQueryResponse {
@@ -696,585 +689,6 @@ func (t *tribe) taskStateQuery(agreementName string, taskId string) *taskStateQu
 	t.broadcast(msg.Type, msg, nil)
 
 	return resp
-}
-
-func (t *tribe) processIntents() {
-	for {
-		if t.processAddPluginIntents() &&
-			t.processRemovePluginIntents() &&
-			t.processAddAgreementIntents() &&
-			t.processRemoveAgreementIntents() &&
-			t.processJoinAgreementIntents() &&
-			t.processLeaveAgreementIntents() &&
-			t.processAddTaskIntents() &&
-			t.processRemoveTaskIntents() {
-			return
-		}
-	}
-}
-
-func (t *tribe) processAddPluginIntents() bool {
-	for idx, v := range t.intentBuffer {
-		if v.GetType() == addPluginMsgType {
-			intent := v.(*pluginMsg)
-			if _, ok := t.agreements[intent.AgreementName]; ok {
-				if ok, _ := t.agreements[intent.AgreementName].PluginAgreement.Plugins.Contains(intent.Plugin); !ok {
-					t.agreements[intent.AgreementName].PluginAgreement.Plugins = append(t.agreements[intent.AgreementName].PluginAgreement.Plugins, intent.Plugin)
-					t.intentBuffer = append(t.intentBuffer[:idx], t.intentBuffer[idx+1:]...)
-
-					ptype, _ := core.ToPluginType(intent.Plugin.TypeName())
-					work := worker.PluginRequest{
-						Plugin: agreement.Plugin{
-							Name_:    intent.Plugin.Name(),
-							Version_: intent.Plugin.Version(),
-							Type_:    ptype,
-						},
-						RequestType: worker.PluginLoadedType,
-					}
-					t.pluginWorkQueue <- work
-
-					return false
-				}
-			}
-		}
-	}
-	return true
-}
-
-func (t *tribe) processRemovePluginIntents() bool {
-	for k, v := range t.intentBuffer {
-		if v.GetType() == removePluginMsgType {
-			intent := v.(*pluginMsg)
-			if a, ok := t.agreements[intent.AgreementName]; ok {
-				if ok, idx := a.PluginAgreement.Plugins.Contains(intent.Plugin); ok {
-					a.PluginAgreement.Plugins = append(a.PluginAgreement.Plugins[:idx], a.PluginAgreement.Plugins[idx+1:]...)
-					t.intentBuffer = append(t.intentBuffer[:k], t.intentBuffer[k+1:]...)
-					return false
-				}
-			}
-		}
-	}
-	return true
-}
-
-func (t *tribe) processAddTaskIntents() bool {
-	for idx, v := range t.intentBuffer {
-		if v.GetType() == addTaskMsgType {
-			intent := v.(*taskMsg)
-			if a, ok := t.agreements[intent.AgreementName]; ok {
-				if ok, _ := a.TaskAgreement.Tasks.Contains(agreement.Task{ID: intent.TaskID}); !ok {
-					a.TaskAgreement.Tasks = append(a.TaskAgreement.Tasks, agreement.Task{ID: intent.TaskID})
-					t.intentBuffer = append(t.intentBuffer[:idx], t.intentBuffer[idx+1:]...)
-
-					work := worker.TaskRequest{
-						Task: worker.Task{
-							ID:            intent.TaskID,
-							StartOnCreate: intent.StartOnCreate,
-						},
-						RequestType: worker.TaskCreatedType,
-					}
-					t.taskWorkQueue <- work
-
-					return false
-				}
-			}
-		}
-	}
-	return true
-}
-
-func (t *tribe) processRemoveTaskIntents() bool {
-	for k, v := range t.intentBuffer {
-		if v.GetType() == removeTaskMsgType {
-			intent := v.(*taskMsg)
-			if _, ok := t.agreements[intent.AgreementName]; ok {
-				if ok, idx := t.agreements[intent.AgreementName].TaskAgreement.Tasks.Contains(agreement.Task{ID: intent.TaskID}); ok {
-					t.agreements[intent.AgreementName].TaskAgreement.Tasks = append(t.agreements[intent.AgreementName].TaskAgreement.Tasks[:idx], t.agreements[intent.AgreementName].TaskAgreement.Tasks[idx+1:]...)
-					t.intentBuffer = append(t.intentBuffer[:k], t.intentBuffer[k+1:]...)
-					return false
-				}
-			}
-		}
-	}
-	return true
-}
-
-func (t *tribe) processAddAgreementIntents() bool {
-	for idx, v := range t.intentBuffer {
-		if v.GetType() == addAgreementMsgType {
-			intent := v.(*agreementMsg)
-			if _, ok := t.agreements[intent.AgreementName]; !ok {
-				t.agreements[intent.AgreementName] = agreement.New(intent.AgreementName)
-				t.intentBuffer = append(t.intentBuffer[:idx], t.intentBuffer[idx+1:]...)
-				return false
-			}
-		}
-	}
-	return true
-}
-
-func (t *tribe) processRemoveAgreementIntents() bool {
-	for k, v := range t.intentBuffer {
-		if v.GetType() == removeAgreementMsgType {
-			intent := v.(*agreementMsg)
-			if _, ok := t.agreements[intent.Agreement()]; ok {
-				delete(t.agreements, intent.Agreement())
-				t.intentBuffer = append(t.intentBuffer[:k], t.intentBuffer[k+1:]...)
-				return false
-			}
-		}
-	}
-	return true
-}
-
-func (t *tribe) processJoinAgreementIntents() bool {
-	for idx, v := range t.intentBuffer {
-		if v.GetType() == joinAgreementMsgType {
-			intent := v.(*agreementMsg)
-			if _, ok := t.members[intent.MemberName]; ok {
-				if _, ok := t.agreements[intent.AgreementName]; ok {
-					err := t.joinAgreement(intent)
-					if err == nil {
-						t.intentBuffer = append(t.intentBuffer[:idx], t.intentBuffer[idx+1:]...)
-					}
-					return false
-				}
-			}
-		}
-	}
-	return true
-}
-
-func (t *tribe) processLeaveAgreementIntents() bool {
-	for idx, v := range t.intentBuffer {
-		if v.GetType() == joinAgreementMsgType {
-			intent := v.(*agreementMsg)
-			if _, ok := t.members[intent.MemberName]; ok {
-				if _, ok := t.agreements[intent.AgreementName]; ok {
-					if _, ok := t.agreements[intent.AgreementName].Members[intent.MemberName]; ok {
-						err := t.leaveAgreement(intent)
-						if err == nil {
-							t.intentBuffer = append(t.intentBuffer[:idx], t.intentBuffer[idx+1:]...)
-						}
-						return false
-					}
-				}
-			}
-		}
-	}
-	return true
-}
-
-func (t *tribe) handleRemovePlugin(msg *pluginMsg) bool {
-	t.mutex.Lock()
-	defer t.mutex.Unlock()
-
-	// update the clock if newer
-	t.clock.Update(msg.LTime)
-
-	if t.isDuplicate(msg) {
-		return false
-	}
-
-	t.msgBuffer[msg.LTime%LTime(len(t.msgBuffer))] = msg
-
-	if _, ok := t.agreements[msg.Agreement()]; ok {
-		if t.agreements[msg.AgreementName].PluginAgreement.Remove(msg.Plugin) {
-			t.processIntents()
-			if t.pluginCatalog != nil {
-				_, err := t.pluginCatalog.Unload(msg.Plugin)
-				if err != nil {
-					t.logger.WithFields(log.Fields{
-						"_block":         "handle-remove-plugin",
-						"plugin-name":    msg.Plugin.Name(),
-						"plugin-type":    msg.Plugin.TypeName(),
-						"plugin-version": msg.Plugin.Version(),
-					}).Error(err)
-				}
-			}
-			return true
-		}
-	}
-
-	t.addPluginIntent(msg)
-	return true
-}
-
-func (t *tribe) handleAddPlugin(msg *pluginMsg) bool {
-	t.mutex.Lock()
-	defer t.mutex.Unlock()
-
-	// update the clock if newer
-	t.clock.Update(msg.LTime)
-
-	if t.isDuplicate(msg) {
-		return false
-	}
-
-	t.msgBuffer[msg.LTime%LTime(len(t.msgBuffer))] = msg
-
-	if _, ok := t.agreements[msg.AgreementName]; ok {
-		if t.agreements[msg.AgreementName].PluginAgreement.Add(msg.Plugin) {
-
-			ptype, _ := core.ToPluginType(msg.Plugin.TypeName())
-			work := worker.PluginRequest{
-				Plugin: agreement.Plugin{
-					Name_:    msg.Plugin.Name(),
-					Version_: msg.Plugin.Version(),
-					Type_:    ptype,
-				},
-				RequestType: worker.PluginLoadedType,
-			}
-			t.pluginWorkQueue <- work
-
-			t.processIntents()
-			return true
-		}
-	}
-
-	t.addPluginIntent(msg)
-	return true
-}
-
-func (t *tribe) handleAddTask(msg *taskMsg) bool {
-	t.mutex.Lock()
-	defer t.mutex.Unlock()
-
-	// update the clock if newer
-	t.clock.Update(msg.LTime)
-
-	if t.isDuplicate(msg) {
-		return false
-	}
-
-	t.msgBuffer[msg.LTime%LTime(len(t.msgBuffer))] = msg
-
-	if _, ok := t.agreements[msg.AgreementName]; ok {
-		if t.agreements[msg.AgreementName].TaskAgreement.Add(agreement.Task{ID: msg.TaskID}) {
-
-			work := worker.TaskRequest{
-				Task: worker.Task{
-					ID:            msg.TaskID,
-					StartOnCreate: msg.StartOnCreate,
-				},
-				RequestType: worker.TaskCreatedType,
-			}
-			t.taskWorkQueue <- work
-
-			t.processIntents()
-			return true
-		}
-	}
-
-	t.addTaskIntent(msg)
-	return true
-}
-
-func (t *tribe) handleRemoveTask(msg *taskMsg) bool {
-	t.mutex.Lock()
-	defer t.mutex.Unlock()
-
-	// update the clock if newer
-	t.clock.Update(msg.LTime)
-
-	if t.isDuplicate(msg) {
-		return false
-	}
-
-	t.msgBuffer[msg.LTime%LTime(len(t.msgBuffer))] = msg
-
-	if _, ok := t.agreements[msg.Agreement()]; ok {
-		if t.agreements[msg.AgreementName].TaskAgreement.Remove(agreement.Task{ID: msg.TaskID}) {
-
-			work := worker.TaskRequest{
-				Task: worker.Task{
-					ID: msg.TaskID,
-				},
-				RequestType: worker.TaskRemovedType,
-			}
-			t.taskWorkQueue <- work
-
-			t.processIntents()
-			return true
-		}
-	}
-
-	t.addTaskIntent(msg)
-	return true
-}
-
-func (t *tribe) handleStartTask(msg *taskMsg) bool {
-	t.mutex.Lock()
-	defer t.mutex.Unlock()
-
-	// update the clock if newer
-	t.clock.Update(msg.LTime)
-
-	if t.isDuplicate(msg) {
-		return false
-	}
-
-	t.msgBuffer[msg.LTime%LTime(len(t.msgBuffer))] = msg
-
-	if _, ok := t.agreements[msg.Agreement()]; ok {
-
-		if ok := t.taskStartStopCache.put(msg, t.getTimeout()); !ok {
-			// A cache entry exists; return and do not broadcast event again
-			return false
-		}
-
-		work := worker.TaskRequest{
-			Task: worker.Task{
-				ID: msg.TaskID,
-			},
-			RequestType: worker.TaskStartedType,
-		}
-		t.taskWorkQueue <- work
-
-		return true
-	}
-
-	return true
-}
-
-func (t *tribe) handleStopTask(msg *taskMsg) bool {
-	t.mutex.Lock()
-	defer t.mutex.Unlock()
-
-	// update the clock if newer
-	t.clock.Update(msg.LTime)
-
-	if t.isDuplicate(msg) {
-		return false
-	}
-
-	t.msgBuffer[msg.LTime%LTime(len(t.msgBuffer))] = msg
-
-	if _, ok := t.agreements[msg.Agreement()]; ok {
-
-		if ok := t.taskStartStopCache.put(msg, t.getTimeout()); !ok {
-			// A cache entry exists; return and do not broadcast event again
-			return false
-		}
-
-		work := worker.TaskRequest{
-			Task: worker.Task{
-				ID: msg.TaskID,
-			},
-			RequestType: worker.TaskStoppedType,
-		}
-		t.taskWorkQueue <- work
-
-		return true
-	}
-
-	return true
-}
-
-func (t *tribe) handleMemberJoin(n *memberlist.Node) {
-	t.mutex.Lock()
-	defer t.mutex.Unlock()
-	if _, ok := t.members[n.Name]; !ok {
-		t.members[n.Name] = agreement.NewMember(n)
-		t.members[n.Name].Tags = t.decodeTags(n.Meta)
-	}
-	t.processIntents()
-}
-
-func (t *tribe) handleMemberLeave(n *memberlist.Node) {
-	t.mutex.Lock()
-	defer t.mutex.Unlock()
-	if m, ok := t.members[n.Name]; ok {
-		if m.PluginAgreement != nil {
-			delete(t.agreements[m.PluginAgreement.Name].Members, n.Name)
-		}
-		for k := range m.TaskAgreements {
-			delete(t.agreements[k].Members, n.Name)
-		}
-		delete(t.members, n.Name)
-	}
-}
-
-func (t *tribe) handleMemberUpdate(n *memberlist.Node) {
-	t.mutex.Lock()
-	defer t.mutex.Unlock()
-	if _, ok := t.members[n.Name]; ok {
-		t.members[n.Name].Tags = t.decodeTags(n.Meta)
-	}
-}
-
-func (t *tribe) handleAddAgreement(msg *agreementMsg) bool {
-	t.mutex.Lock()
-	defer t.mutex.Unlock()
-
-	// update clock if newer
-	t.clock.Update(msg.LTime)
-
-	if t.isDuplicate(msg) {
-		return false
-	}
-
-	// add msg to seen buffer
-	t.msgBuffer[msg.LTime%LTime(len(t.msgBuffer))] = msg
-
-	// add agreement
-	if _, ok := t.agreements[msg.AgreementName]; !ok {
-		t.agreements[msg.AgreementName] = agreement.New(msg.AgreementName)
-		t.processIntents()
-		return true
-	}
-	t.addAgreementIntent(msg)
-	return true
-}
-
-func (t *tribe) handleRemoveAgreement(msg *agreementMsg) bool {
-	t.mutex.Lock()
-	defer t.mutex.Unlock()
-
-	// update clock if newer
-	t.clock.Update(msg.LTime)
-
-	if t.isDuplicate(msg) {
-		return false
-	}
-
-	// add msg to seen buffer
-	t.msgBuffer[msg.LTime%LTime(len(t.msgBuffer))] = msg
-
-	if _, ok := t.agreements[msg.AgreementName]; ok {
-		delete(t.agreements, msg.AgreementName)
-		t.processIntents()
-		// TODO consider removing any intents that involve this agreement
-		return true
-	}
-
-	return true
-}
-
-func (t *tribe) handleJoinAgreement(msg *agreementMsg) bool {
-	t.mutex.Lock()
-	defer t.mutex.Unlock()
-
-	// update the clock if newer
-	t.clock.Update(msg.LTime)
-
-	if t.isDuplicate(msg) {
-		return false
-	}
-
-	t.msgBuffer[msg.LTime%LTime(len(t.msgBuffer))] = msg
-
-	if err := t.joinAgreement(msg); err == nil {
-		t.processIntents()
-		return true
-	}
-
-	t.addAgreementIntent(msg)
-	return true
-}
-
-func (t *tribe) handleLeaveAgreement(msg *agreementMsg) bool {
-	t.mutex.Lock()
-	defer t.mutex.Unlock()
-
-	// update the clock if newer
-	t.clock.Update(msg.LTime)
-
-	if t.isDuplicate(msg) {
-		return false
-	}
-
-	t.msgBuffer[msg.LTime%LTime(len(t.msgBuffer))] = msg
-
-	if err := t.leaveAgreement(msg); err == nil {
-		t.processIntents()
-		return true
-	}
-
-	t.addAgreementIntent(msg)
-
-	return true
-}
-
-func (t *tribe) handleTaskStateQuery(msg *taskStateQueryMsg) bool {
-	t.mutex.Lock()
-	defer t.mutex.Unlock()
-
-	// update the clock if newer
-	t.clock.Update(msg.LTime)
-
-	if t.isDuplicate(msg) {
-		return false
-	}
-
-	t.msgBuffer[msg.LTime%LTime(len(t.msgBuffer))] = msg
-
-	if time.Now().After(msg.Deadline) {
-		t.logger.WithFields(log.Fields{
-			"_block":   "handleStateQuery",
-			"deadline": msg.Deadline,
-			"ltime":    msg.LTime,
-		}).Warn("deadline passed for task state query")
-		return false
-	}
-
-	if !t.isMemberOfAgreement(msg.Agreement()) {
-		// we are not a member of the agreement
-		return true
-	}
-
-	resp := taskStateQueryResponseMsg{
-		LTime: msg.LTime,
-		UUID:  msg.UUID,
-		From:  t.memberlist.LocalNode().Name,
-	}
-
-	tsk, err := t.taskManager.GetTask(msg.TaskID)
-	if err != nil {
-		t.logger.WithFields(log.Fields{
-			"_block":  "handleStateQuery",
-			"err":     err,
-			"task-id": msg.TaskID,
-			"msg-id":  msg.UUID,
-		}).Error("failed to get task state")
-		return true
-	}
-
-	resp.State = tsk.State()
-
-	// Format the response
-	raw, err := encodeMessage(taskStateQueryResponseMsgType, &resp)
-	if err != nil {
-		t.logger.WithFields(log.Fields{
-			"_block": "handleStateQuery",
-			"err":    err,
-		}).Error("failed to encode message")
-		return true
-	}
-
-	// Check the size limit
-	if len(raw) > TaskStateQueryResponseSizeLimit {
-		t.logger.WithFields(log.Fields{
-			"_block":     "handleStateQuery",
-			"err":        err,
-			"size-limit": TaskStateQueryResponseSizeLimit,
-			"msg-size":   len(raw),
-		}).Error("msg exceeds size limit", TaskStateQueryResponseSizeLimit)
-		return true
-	}
-
-	// Send the response
-	addr := net.UDPAddr{IP: msg.Addr, Port: int(msg.Port)}
-	if err := t.memberlist.SendTo(&addr, raw); err != nil {
-		t.logger.WithFields(log.Fields{
-			"_block":      "handleStateQuery",
-			"remote-addr": msg.Addr,
-			"remote-port": msg.Port,
-			"err":         err,
-		}).Error("failed to send task state reply")
-	}
-
-	return true
 }
 
 func (t *tribe) registerQueryResponse(timeout time.Duration, resp *taskStateQueryResponse) {
@@ -1474,41 +888,6 @@ func (t *tribe) isDuplicate(msg msg) bool {
 		return true
 	}
 	return false
-}
-
-func (t *tribe) addPluginIntent(msg *pluginMsg) bool {
-	t.logger.WithFields(log.Fields{
-		"event-clock": msg.LTime,
-		"agreement":   msg.AgreementName,
-		"type":        msg.Type.String(),
-		"plugin": fmt.Sprintf("%v:%v:%v",
-			msg.Plugin.TypeName(),
-			msg.Plugin.Name(),
-			msg.Plugin.Version()),
-	}).Debugln("out of order message")
-	t.intentBuffer = append(t.intentBuffer, msg)
-	return true
-}
-
-func (t *tribe) addAgreementIntent(m msg) bool {
-	t.logger.WithFields(log.Fields{
-		"event-clock": m.Time(),
-		"agreement":   m.Agreement(),
-		"type":        m.GetType().String(),
-	}).Debugln("out of order message")
-	t.intentBuffer = append(t.intentBuffer, m)
-	return true
-}
-
-func (t *tribe) addTaskIntent(m *taskMsg) bool {
-	t.logger.WithFields(log.Fields{
-		"event-clock": m.Time(),
-		"agreement":   m.Agreement(),
-		"type":        m.GetType().String(),
-		"task-id":     m.TaskID,
-	}).Debugln("Out of order msg")
-	t.intentBuffer = append(t.intentBuffer, m)
-	return true
 }
 
 func (t *tribe) getTimeout() time.Duration {

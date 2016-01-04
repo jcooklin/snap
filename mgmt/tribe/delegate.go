@@ -20,138 +20,37 @@ limitations under the License.
 package tribe
 
 import (
+	"bytes"
 	"fmt"
 
 	log "github.com/Sirupsen/logrus"
+	"github.com/hashicorp/go-msgpack/codec"
 )
 
 type delegate struct {
 	tribe *tribe
 }
 
-func (t *delegate) NodeMeta(limit int) []byte {
-	t.tribe.logger.WithField("_block", "delegate-node-meta").Debugln("getting node meta data")
-	tags := t.tribe.encodeTags(t.tribe.tags)
+func newDelegate(t *tribe) *delegate {
+	return &delegate{
+		tribe: t,
+	}
+}
+
+func (d *delegate) NodeMeta(limit int) []byte {
+	d.tribe.logger.WithField("_block", "delegate-node-meta").Debugln("getting node meta data")
+	tags := d.tribe.encodeTags(d.tribe.tags)
 	if len(tags) > limit {
-		panic(fmt.Errorf("Node tags '%v' exceeds length limit of %d bytes", t.tribe.tags, limit))
+		panic(fmt.Errorf("Node tags '%v' exceeds length limit of %d bytes", d.tribe.tags, limit))
 	}
 	return tags
 }
 
-func (t *delegate) NotifyMsg(buf []byte) {
-	if len(buf) == 0 {
-		return
+func (d *delegate) NotifyMsg(buf []byte) {
+	if d.tribe.counters != nil {
+		defer d.tribe.counters.incNotifyMsgCounters(msgType(buf[0]))
 	}
-
-	var rebroadcast = true
-
-	switch msgType(buf[0]) {
-	case addPluginMsgType:
-		msg := &pluginMsg{}
-		if err := decodeMessage(buf[1:], msg); err != nil {
-			panic(err)
-		}
-		rebroadcast = t.tribe.handleAddPlugin(msg)
-	case removePluginMsgType:
-		msg := &pluginMsg{}
-		if err := decodeMessage(buf[1:], msg); err != nil {
-			panic(err)
-		}
-		rebroadcast = t.tribe.handleRemovePlugin(msg)
-	case addAgreementMsgType:
-		msg := &agreementMsg{}
-		if err := decodeMessage(buf[1:], msg); err != nil {
-			panic(err)
-		}
-		rebroadcast = t.tribe.handleAddAgreement(msg)
-	case removeAgreementMsgType:
-		msg := &agreementMsg{}
-		if err := decodeMessage(buf[1:], msg); err != nil {
-			panic(err)
-		}
-		rebroadcast = t.tribe.handleRemoveAgreement(msg)
-	case joinAgreementMsgType:
-		msg := &agreementMsg{}
-		if err := decodeMessage(buf[1:], msg); err != nil {
-			panic(err)
-		}
-		rebroadcast = t.tribe.handleJoinAgreement(msg)
-	case leaveAgreementMsgType:
-		msg := &agreementMsg{}
-		if err := decodeMessage(buf[1:], msg); err != nil {
-			panic(err)
-		}
-		rebroadcast = t.tribe.handleLeaveAgreement(msg)
-	case addTaskMsgType:
-		msg := &taskMsg{}
-		if err := decodeMessage(buf[1:], msg); err != nil {
-			panic(err)
-		}
-		rebroadcast = t.tribe.handleAddTask(msg)
-	case removeTaskMsgType:
-		msg := &taskMsg{}
-		if err := decodeMessage(buf[1:], msg); err != nil {
-			panic(err)
-		}
-		rebroadcast = t.tribe.handleRemoveTask(msg)
-	case stopTaskMsgType:
-		msg := &taskMsg{}
-		if err := decodeMessage(buf[1:], msg); err != nil {
-			panic(err)
-		}
-		rebroadcast = t.tribe.handleStopTask(msg)
-	case startTaskMsgType:
-		msg := &taskMsg{}
-		if err := decodeMessage(buf[1:], msg); err != nil {
-			panic(err)
-		}
-		rebroadcast = t.tribe.handleStartTask(msg)
-	case getTaskStateMsgType:
-		msg := &taskStateQueryMsg{}
-		if err := decodeMessage(buf[1:], msg); err != nil {
-			panic(err)
-		}
-		rebroadcast = t.tribe.handleTaskStateQuery(msg)
-	case taskStateQueryResponseMsgType:
-		msg := &taskStateQueryResponseMsg{}
-		if err := decodeMessage(buf[1:], msg); err != nil {
-			panic(err)
-		}
-		queryResp, ok := t.tribe.taskStateResponses[msg.UUID]
-		if !ok {
-			logger.WithFields(log.Fields{
-				"_block":    "delegate-notify-msg",
-				"ltime":     msg.LTime,
-				"responses": t.tribe.taskStateResponses,
-				"from":      msg.From,
-			}).Debug("task state response does not exist - nothing to do")
-			return
-		}
-		queryResp.lock.Lock()
-		if !queryResp.isClosed {
-			if _, ok := queryResp.from[msg.From]; !ok {
-				queryResp.from[msg.From] = msg.State
-				queryResp.resp <- taskStateResponse{From: msg.From, State: msg.State}
-			}
-		}
-		queryResp.lock.Unlock()
-
-	default:
-		logger.WithFields(log.Fields{
-			"_block": "delegate-notify-msg",
-			"value":  buf[0],
-		}).Errorln("unknown message type")
-		return
-	}
-
-	if rebroadcast {
-		newBuf := make([]byte, len(buf))
-		copy(newBuf, buf)
-		t.tribe.broadcasts.QueueBroadcast(&broadcast{
-			msg:    newBuf,
-			notify: nil,
-		})
-	}
+	d.notifyMsg(buf)
 }
 
 func (t *delegate) GetBroadcasts(overhead, limit int) [][]byte {
@@ -353,4 +252,144 @@ func (t *delegate) MergeRemoteState(buf []byte, join bool) {
 		}
 	}
 
+}
+
+func (t *delegate) notifyMsg(buf []byte) {
+	if len(buf) == 0 {
+		return
+	}
+
+	var rebroadcast = true
+
+	switch msgType(buf[0]) {
+	case addPluginMsgType:
+		msg := &pluginMsg{}
+		if err := decodeMessage(buf[1:], msg); err != nil {
+			panic(err)
+		}
+		rebroadcast = t.tribe.handleAddPlugin(msg)
+	case removePluginMsgType:
+		msg := &pluginMsg{}
+		if err := decodeMessage(buf[1:], msg); err != nil {
+			panic(err)
+		}
+		rebroadcast = t.tribe.handleRemovePlugin(msg)
+	case addAgreementMsgType:
+		msg := &agreementMsg{}
+		if err := decodeMessage(buf[1:], msg); err != nil {
+			panic(err)
+		}
+		rebroadcast = t.tribe.handleAddAgreement(msg)
+	case removeAgreementMsgType:
+		msg := &agreementMsg{}
+		if err := decodeMessage(buf[1:], msg); err != nil {
+			panic(err)
+		}
+		rebroadcast = t.tribe.handleRemoveAgreement(msg)
+	case joinAgreementMsgType:
+		msg := &agreementMsg{}
+		if err := decodeMessage(buf[1:], msg); err != nil {
+			panic(err)
+		}
+		rebroadcast = t.tribe.handleJoinAgreement(msg)
+	case leaveAgreementMsgType:
+		msg := &agreementMsg{}
+		if err := decodeMessage(buf[1:], msg); err != nil {
+			panic(err)
+		}
+		rebroadcast = t.tribe.handleLeaveAgreement(msg)
+	case addTaskMsgType:
+		msg := &taskMsg{}
+		if err := decodeMessage(buf[1:], msg); err != nil {
+			panic(err)
+		}
+		rebroadcast = t.tribe.handleAddTask(msg)
+	case removeTaskMsgType:
+		msg := &taskMsg{}
+		if err := decodeMessage(buf[1:], msg); err != nil {
+			panic(err)
+		}
+		rebroadcast = t.tribe.handleRemoveTask(msg)
+	case stopTaskMsgType:
+		msg := &taskMsg{}
+		if err := decodeMessage(buf[1:], msg); err != nil {
+			panic(err)
+		}
+		rebroadcast = t.tribe.handleStopTask(msg)
+	case startTaskMsgType:
+		msg := &taskMsg{}
+		if err := decodeMessage(buf[1:], msg); err != nil {
+			panic(err)
+		}
+		rebroadcast = t.tribe.handleStartTask(msg)
+	case getTaskStateMsgType:
+		msg := &taskStateQueryMsg{}
+		if err := decodeMessage(buf[1:], msg); err != nil {
+			panic(err)
+		}
+		rebroadcast = t.tribe.handleTaskStateQuery(msg)
+	case taskStateQueryResponseMsgType:
+		msg := &taskStateQueryResponseMsg{}
+		if err := decodeMessage(buf[1:], msg); err != nil {
+			panic(err)
+		}
+		queryResp, ok := t.tribe.taskStateResponses[msg.UUID]
+		if !ok {
+			logger.WithFields(log.Fields{
+				"_block":    "delegate-notify-msg",
+				"ltime":     msg.LTime,
+				"responses": t.tribe.taskStateResponses,
+				"from":      msg.From,
+			}).Debug("task state response does not exist - nothing to do")
+			return
+		}
+		queryResp.lock.Lock()
+		if !queryResp.isClosed {
+			if _, ok := queryResp.from[msg.From]; !ok {
+				queryResp.from[msg.From] = msg.State
+				queryResp.resp <- taskStateResponse{From: msg.From, State: msg.State}
+			}
+		}
+		queryResp.lock.Unlock()
+
+	default:
+		logger.WithFields(log.Fields{
+			"_block": "delegate-notify-msg",
+			"value":  buf[0],
+		}).Errorln("unknown message type")
+		return
+	}
+
+	if rebroadcast {
+		newBuf := make([]byte, len(buf))
+		copy(newBuf, buf)
+		t.tribe.broadcasts.QueueBroadcast(&broadcast{
+			msg:    newBuf,
+			notify: nil,
+		})
+	}
+}
+
+// encodeTags
+func (t *tribe) encodeTags(tags map[string]string) []byte {
+	var buf bytes.Buffer
+	enc := codec.NewEncoder(&buf, &codec.MsgpackHandle{})
+	if err := enc.Encode(tags); err != nil {
+		panic(fmt.Sprintf("Failed to encode tags: %v", err))
+	}
+	return buf.Bytes()
+}
+
+// decodeTags is used to decode a tag map
+func (t *tribe) decodeTags(buf []byte) map[string]string {
+	tags := make(map[string]string)
+	r := bytes.NewReader(buf)
+	dec := codec.NewDecoder(r, &codec.MsgpackHandle{})
+	if err := dec.Decode(&tags); err != nil {
+		t.logger.WithFields(log.Fields{
+			"_block": "decode-tags",
+			"error":  err,
+		}).Error("Failed to decode tags")
+	}
+	return tags
 }
