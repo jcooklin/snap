@@ -52,7 +52,8 @@ type pluginConfigItem struct {
 }
 
 type config struct {
-	Plugins *pluginConfig `json:"plugins"`
+	Flags   map[string]string `json:"flags"`
+	Plugins *pluginConfig     `json:"plugins"`
 }
 
 // NewConfig returns a reference to a global config type for the snap daemon

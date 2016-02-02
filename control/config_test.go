@@ -68,6 +68,9 @@ func TestPluginConfig(t *testing.T) {
 		Convey("We are able to unmarshal it into a valid config", func() {
 			err = json.Unmarshal(b, &cfg)
 			So(err, ShouldBeNil)
+			So(cfg.Flags, ShouldNotBeNil)
+			So(cfg.Flags, ShouldContainKey, "tribe")
+			So(cfg.Flags["tribe"], ShouldResemble, "true")
 			So(cfg.Plugins.All.Table()["password"], ShouldResemble, ctypes.ConfigValueStr{Value: "p@ssw0rd"})
 			So(cfg.Plugins.Collector.Plugins["pcm"], ShouldNotBeNil)
 			So(cfg.Plugins.Collector.Plugins["pcm"].Table()["path"], ShouldResemble, ctypes.ConfigValueStr{Value: "/usr/local/pcm/bin"})

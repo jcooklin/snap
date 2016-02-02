@@ -267,6 +267,7 @@ func action(ctx *cli.Context) {
 				"path":    config,
 			}).Fatal("invalid config")
 		}
+		// TODO call a function here that will process the flags defined in the config file
 		controlOpts = append(controlOpts, control.OptSetConfig(cfg))
 	}
 
