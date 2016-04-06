@@ -612,13 +612,118 @@ func (p *pluginControl) gatherCollectors(mts []core.Metric) ([]core.Plugin, []se
 	return plugins, nil
 }
 
+func (p *pluginControl) gatherCollectorsjc(mts []core.Metric) ([]core.Plugin, []serror.SnapError) {
+	var (
+		plugins []core.Plugin
+		serrs   []serror.SnapError
+	)
+	fmt.Printf("\n\nSearchForMeJC: %v", mts)
+	// here we resolve and retrieve plugins for each metric type.
+	// if the incoming metric type version is < 1, we treat that as
+	// latest as with plugins.  The following two loops create a set
+	// of plugins with proper versions needed to discern the subscription
+	// types.
+	colPlugins := make(map[string]*loadedPlugin)
+	for _, mt := range mts {
+		m, err := p.metricCatalog.Get(mt.Namespace(), mt.Version())
+		if err != nil {
+			serrs = append(serrs, serror.New(err, map[string]interface{}{
+				"name":    core.JoinNamespace(mt.Namespace()),
+				"version": mt.Version(),
+			}))
+			continue
+		}
+		// if the metric subscription is to version -1, we need to carry
+		// that forward in the subscription.
+		if mt.Version() < 1 {
+			// make a copy of the loadedPlugin and overwrite the version.
+			// lp := loadedPlugin{
+			// 	Meta: plugin.PluginMeta{
+			// 		Name:    m.Plugin.Name(),
+			// 		Version: -1,
+			// 		Type:    m.Plugin.Type,
+			// 	},
+			// }
+			//
+			npl := *m.Plugin
+			npl.Meta.Version = -1
+			colPlugins[npl.Key()] = &npl
+			// colPlugins[lp.Key()] = &lp
+		} else {
+			colPlugins[m.Plugin.Key()] = m.Plugin
+		}
+	}
+	if len(serrs) > 0 {
+		return plugins, serrs
+	}
+
+	for _, lp := range colPlugins {
+		fmt.Println("\n\nKey--", lp.Key())
+		fmt.Println()
+		plugins = append(plugins, lp)
+	}
+	if len(plugins) == 0 {
+		serrs = append(serrs, serror.New(errors.New("something bad happened")))
+		return nil, serrs
+	}
+	return plugins, nil
+}
+
+func (p *pluginControl) gatherCollectorsjc2(mts []core.Metric) ([]core.Plugin, []serror.SnapError) {
+	var (
+		plugins []core.Plugin
+		serrs   []serror.SnapError
+	)
+	fmt.Printf("\n\nSearchForMe: %v", mts)
+	// here we resolve and retrieve plugins for each metric type.
+	// if the incoming metric type version is < 1, we treat that as
+	// latest as with plugins.  The following two loops create a set
+	// of plugins with proper versions needed to discern the subscription
+	// types.
+	colPlugins := make(map[string]*loadedPlugin)
+	for _, mt := range mts {
+		m, err := p.metricCatalog.Get(mt.Namespace(), mt.Version())
+		if err != nil {
+			serrs = append(serrs, serror.New(err, map[string]interface{}{
+				"name":    core.JoinNamespace(mt.Namespace()),
+				"version": mt.Version(),
+			}))
+			continue
+		}
+		// if the metric subscription is to version -1, we need to carry
+		// that forward in the subscription.
+		if mt.Version() < 1 {
+			// make a copy of the loadedPlugin and overwrite the version.
+			npl := *m.Plugin
+			npl.Meta.Version = -1
+			colPlugins[npl.Key()] = &npl
+		} else {
+			colPlugins[m.Plugin.Key()] = m.Plugin
+		}
+	}
+	if len(serrs) > 0 {
+		return plugins, serrs
+	}
+
+	for _, lp := range colPlugins {
+		fmt.Println("\n\nKey--", lp.Key())
+		fmt.Println()
+		plugins = append(plugins, lp)
+	}
+	if len(plugins) == 0 {
+		serrs = append(serrs, serror.New(errors.New("something bad happened")))
+		return nil, serrs
+	}
+	return plugins, nil
+}
+
 func (p *pluginControl) SubscribeDeps(taskID string, mts []core.Metric, plugins []core.Plugin) []serror.SnapError {
 	var serrs []serror.SnapError
 	fmt.Println("\n\nsomething")
 	for _, v := range mts {
 		fmt.Println("METRIC:", v.Version())
 	}
-	collectors, errs := p.gatherCollectors(mts)
+	collectors, errs := p.gatherCollectorsjc2(mts)
 	if len(errs) > 0 {
 		serrs = append(serrs)
 	}
@@ -729,7 +834,7 @@ func (p *pluginControl) sendPluginSubscriptionEvent(taskID string, pl core.Plugi
 func (p *pluginControl) UnsubscribeDeps(taskID string, mts []core.Metric, plugins []core.Plugin) []serror.SnapError {
 	var serrs []serror.SnapError
 
-	collectors, errs := p.gatherCollectors(mts)
+	collectors, errs := p.gatherCollectorsjc2(mts)
 	if len(errs) > 0 {
 		serrs = append(serrs, errs...)
 	}
