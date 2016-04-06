@@ -1421,7 +1421,7 @@ func TestGatherCollectors(t *testing.T) {
 			plgs, errs := c.gatherCollectors(m)
 			So(errs, ShouldBeNil)
 			So(plgs, ShouldNotBeEmpty)
-			So(plgs[0].Version(), ShouldEqual, 1)
+			So(plgs[0].plugin.Version(), ShouldEqual, 1)
 		})
 		Convey("it gathers the queried version of plugin", func() {
 			Convey("the version is available", func() {
@@ -1435,7 +1435,7 @@ func TestGatherCollectors(t *testing.T) {
 				plgs, errs := c.gatherCollectors(m)
 				So(errs, ShouldBeNil)
 				So(plgs, ShouldNotBeEmpty)
-				So(plgs[0].Version(), ShouldEqual, v)
+				So(plgs[0].plugin.Version(), ShouldEqual, v)
 			})
 			Convey("the version is not available", func() {
 				m := []core.Metric{
@@ -1611,7 +1611,7 @@ func TestMetricRolloverToNewVersion(t *testing.T) {
 		select {
 		case <-lpe.done:
 		case <-time.After(2 * time.Second):
-			t.FailNow()
+			So(false, ShouldEqual, true)
 		}
 		fmt.Println("after done loading mocok 1 event")
 		So(len(c.pluginManager.all()), ShouldEqual, 1)
@@ -1633,7 +1633,7 @@ func TestMetricRolloverToNewVersion(t *testing.T) {
 		// Wait for plugin subscription event
 		case <-lpe.done:
 		case <-time.After(2 * time.Second):
-			t.FailNow()
+			So(false, ShouldEqual, true)
 		}
 		// collect metrics as a sanity check that everything is setup correctly
 		fmt.Println("collectMetrics")
@@ -1655,7 +1655,7 @@ func TestMetricRolloverToNewVersion(t *testing.T) {
 			case <-time.After(2 * time.Second):
 				fmt.Println("\n\n Failing while waiting for plugin load")
 				fmt.Println()
-				t.FailNow()
+				So(false, ShouldEqual, true)
 			}
 			select {
 			// Wait on subscriptionMovedEvent
@@ -1663,7 +1663,7 @@ func TestMetricRolloverToNewVersion(t *testing.T) {
 			case <-time.After(2 * time.Second):
 				fmt.Println("\n\n Failing while waiting for subscription move")
 				fmt.Println()
-				t.FailNow()
+				So(false, ShouldEqual, true)
 			}
 			// Check for subscription movement.
 			// Give some time for subscription to be moved.

@@ -589,9 +589,14 @@ func (p *pluginControl) validateMetricTypeSubscription(mt core.RequestedMetric, 
 	return serrs
 }
 
-func (p *pluginControl) gatherCollectors(mts []core.Metric) ([]core.Plugin, []serror.SnapError) {
+type gatheredPlugin struct {
+	plugin           core.Plugin
+	subscriptionType strategy.SubscriptionType
+}
+
+func (p *pluginControl) gatherCollectors(mts []core.Metric) ([]gatheredPlugin, []serror.SnapError) {
 	var (
-		plugins []core.Plugin
+		plugins []gatheredPlugin
 		serrs   []serror.SnapError
 	)
 	fmt.Printf("\n\nSearchForMe: %v", mts)
@@ -600,7 +605,7 @@ func (p *pluginControl) gatherCollectors(mts []core.Metric) ([]core.Plugin, []se
 	// latest as with plugins.  The following two loops create a set
 	// of plugins with proper versions needed to discern the subscription
 	// types.
-	colPlugins := make(map[string]*loadedPlugin)
+	colPlugins := make(map[string]gatheredPlugin)
 	for _, mt := range mts {
 		// If the version provided is <1 we will get the latest
 		// plugin for the given metric.
@@ -612,16 +617,20 @@ func (p *pluginControl) gatherCollectors(mts []core.Metric) ([]core.Plugin, []se
 			}))
 			continue
 		}
-
-		colPlugins[m.Plugin.Key()] = m.Plugin
+		subType := strategy.BoundSubscriptionType
+		if mt.Version() < 1 {
+			subType = strategy.UnboundSubscriptionType
+		}
+		colPlugins[fmt.Sprintf("%s:%d", m.Plugin.Key(), subType)] = gatheredPlugin{
+			plugin:           m.Plugin,
+			subscriptionType: subType,
+		}
 	}
 	if len(serrs) > 0 {
 		return plugins, serrs
 	}
 
 	for _, lp := range colPlugins {
-		fmt.Println("\n\nKey--", lp.Key())
-		fmt.Println()
 		plugins = append(plugins, lp)
 	}
 	if len(plugins) == 0 {
@@ -641,9 +650,34 @@ func (p *pluginControl) SubscribeDeps(taskID string, mts []core.Metric, plugins 
 	if len(errs) > 0 {
 		serrs = append(serrs)
 	}
-	plugins = append(plugins, collectors...)
-	fmt.Println("\n\n Sub deps len collectors", len(collectors), "len plugins", len(plugins))
-	fmt.Println()
+
+	for _, gc := range collectors {
+		pool, err := p.pluginRunner.AvailablePlugins().getOrCreatePool(fmt.Sprintf("%s:%s:%d", gc.plugin.TypeName(), gc.plugin.Name(), gc.plugin.Version()))
+		if err != nil {
+			serrs = append(serrs, serror.New(err))
+			return serrs
+		}
+		pool.Subscribe(taskID, gc.subscriptionType)
+		if pool.Eligible() {
+			err = p.verifyPlugin(gc.plugin.(*loadedPlugin))
+			if err != nil {
+				serrs = append(serrs, serror.New(err))
+				return serrs
+			}
+			err = p.pluginRunner.runPlugin(gc.plugin.(*loadedPlugin).Details)
+			if err != nil {
+				serrs = append(serrs, serror.New(err))
+				return serrs
+			}
+		}
+		serr := p.sendPluginSubscriptionEvent(taskID, gc.plugin)
+		if serr != nil {
+			serrs = append(serrs, serr)
+		}
+	}
+	// plugins = append(plugins, collectors...)
+	// fmt.Println("\n\n Sub deps len collectors", len(collectors), "len plugins", len(plugins))
+	// fmt.Println()
 	for _, sub := range plugins {
 		// pools are created statically, not with keys like "publisher:foo:-1"
 		// here we check to see if the version of the incoming plugin is -1, and
@@ -752,7 +786,10 @@ func (p *pluginControl) UnsubscribeDeps(taskID string, mts []core.Metric, plugin
 	if len(errs) > 0 {
 		serrs = append(serrs, errs...)
 	}
-	plugins = append(plugins, collectors...)
+	for _, gc := range collectors {
+		plugins = append(plugins, gc.plugin)
+	}
+	// plugins = append(plugins, collectors...)
 
 	for _, sub := range plugins {
 		pool, err := p.pluginRunner.AvailablePlugins().getPool(fmt.Sprintf("%s:%s:%d", sub.TypeName(), sub.Name(), sub.Version()))
