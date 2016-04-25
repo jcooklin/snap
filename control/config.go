@@ -22,6 +22,7 @@ package control
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -33,6 +34,7 @@ import (
 	"github.com/intelsdi-x/snap/core"
 	"github.com/intelsdi-x/snap/core/cdata"
 	"github.com/intelsdi-x/snap/core/ctypes"
+	"github.com/intelsdi-x/snap/core/serror"
 )
 
 // default configuration values
@@ -42,6 +44,10 @@ const (
 	defaultAutoDiscoverPath  string        = ""
 	defaultKeyringPaths      string        = ""
 	defaultCacheExpiration   time.Duration = 500 * time.Millisecond
+)
+
+var (
+	ErrParsingConfig = errors.New("error parsing config")
 )
 
 type pluginConfig struct {
@@ -96,7 +102,12 @@ func NewConfig(configMap map[string]interface{}) (*Config, error) {
 			}
 			c.MaxRunningPlugins = int(tmpVal)
 		} else {
-			return nil, fmt.Errorf("Error parsing 'max_running_plugins' from config; expected 'json.Number' but found '%T'", v)
+			return nil, serror.New(
+				ErrParsingConfig,
+				serror.Fields{
+					"field":  "max_running_plugins",
+					"detail": fmt.Sprintf("expected 'json.Number' but found '%T'", v),
+				})
 		}
 	}
 	// set the PluginTrust value (if it was included in the input hash map)
