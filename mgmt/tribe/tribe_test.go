@@ -917,7 +917,7 @@ func TestTribePluginAgreement(t *testing.T) {
 												So(len(t.intentBuffer), ShouldEqual, 0)
 												So(len(t.agreements["clan1"].PluginAgreement.Plugins), ShouldEqual, numAddMessages)
 											}
-											t := tribes[rand.Intn(numOfTribes)]
+											// t := tribes[rand.Intn(numOfTribes)]
 											plugin := t.agreements["clan1"].PluginAgreement.Plugins[rand.Intn(numAddMessages)]
 											before := len(t.agreements["clan1"].PluginAgreement.Plugins)
 											t.RemovePlugin("clan1", plugin)
@@ -925,12 +925,13 @@ func TestTribePluginAgreement(t *testing.T) {
 											So(before-after, ShouldEqual, 1)
 											var wg sync.WaitGroup
 											for _, t := range tribes {
+												timer := time.After(1500 * time.Millisecond)
 												wg.Add(1)
 												go func(t *tribe) {
 													defer wg.Done()
 													for {
 														select {
-														case <-time.After(1500 * time.Millisecond):
+														case <-timer:
 															c.So(len(t.agreements["clan1"].PluginAgreement.Plugins), ShouldEqual, after)
 														default:
 															if len(t.agreements["clan1"].PluginAgreement.Plugins) == after {
@@ -942,7 +943,7 @@ func TestTribePluginAgreement(t *testing.T) {
 													}
 												}(t)
 											}
-											wg.Done()
+											wg.Wait()
 
 											Convey("Handles out-of-order remove", func() {
 												t := tribes[rand.Intn(numOfTribes)]
@@ -980,6 +981,15 @@ func TestTribePluginAgreement(t *testing.T) {
 													So(len(t.intentBuffer), ShouldEqual, 0)
 													ok, _ := t.agreements["clan1"].PluginAgreement.Plugins.Contains(msg.Plugin)
 													So(ok, ShouldBeFalse)
+													// add plugin back to get us back to 9
+													t.handleAddPlugin(&pluginMsg{
+														LTime:         t.clock.Increment(),
+														Plugin:        plugin,
+														AgreementName: "clan1",
+														Type:          addPluginMsgType,
+													})
+													So(len(t.intentBuffer), ShouldEqual, 0)
+													So(len(t.agreements["clan1"].PluginAgreement.Plugins), ShouldEqual, 9)
 
 													Convey("Handles old 'remove plugin' messages", func() {
 														t := tribes[rand.Intn(numOfTribes)]
@@ -1019,16 +1029,18 @@ func TestTribePluginAgreement(t *testing.T) {
 														So(before, ShouldEqual, after)
 
 														Convey("The tribe agrees on plugin agreements", func(c C) {
-															var wg sync.WaitGroup
+															var bs sync.WaitGroup
 															for _, t := range tribes {
-																wg.Add(1)
-																go func(t *tribe) {
+																bs.Add(1)
+																timer := time.After(5 * time.Second)
+																go func(t *tribe, asdf *sync.WaitGroup) {
 																	for {
-																		defer wg.Done()
+																		defer asdf.Done()
 																		select {
-																		case <-time.After(1 * time.Second):
-																			c.So(len(t.memberlist.Members()), ShouldEqual, numOfTribes)
+																		case <-timer:
+																			c.So(true, ShouldEqual, false) // should be consistent with conditional in default
 																		default:
+																			fmt.Printf("tribe %s len of agreement.plugins %d \n", t.Name(), len(t.agreements["clan1"].PluginAgreement.Plugins))
 																			if len(t.agreements["clan1"].PluginAgreement.Plugins) == numAddMessages-1 {
 																				c.So(len(t.agreements["clan1"].PluginAgreement.Plugins), ShouldEqual, numAddMessages-1)
 																				return
@@ -1036,9 +1048,9 @@ func TestTribePluginAgreement(t *testing.T) {
 																		}
 
 																	}
-																}(t)
+																}(t, &bs)
 															}
-															wg.Done()
+															bs.Wait()
 														})
 													})
 												})
