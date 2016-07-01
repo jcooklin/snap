@@ -24,12 +24,14 @@ package scheduler
 import (
 	"errors"
 	"fmt"
+	"path"
 	"testing"
 	"time"
 
 	log "github.com/Sirupsen/logrus"
 	. "github.com/smartystreets/goconvey/convey"
 
+	"github.com/intelsdi-x/snap/control"
 	"github.com/intelsdi-x/snap/core"
 	"github.com/intelsdi-x/snap/core/cdata"
 	"github.com/intelsdi-x/snap/core/ctypes"
@@ -129,6 +131,9 @@ func (m *mockMetricManager) GetAutodiscoverPaths() []string {
 }
 
 func (m *mockMetricManager) AddTaskIDData(taskID string, metrics []core.RequestedMetric, configTree *cdata.ConfigDataTree, plugins []core.SubscribedPlugin) {
+}
+
+func (m *mockMetricManager) RemoveTaskIDData(taskID string) {
 }
 
 type mockMetricManagerError struct {
@@ -383,4 +388,84 @@ func testInboundContentType(node interface{}) {
 		fmt.Printf("testing content type for pu plugin %s %d/n", t.Name(), t.Version())
 		So(t.InboundContentType, ShouldNotEqual, "")
 	}
+}
+
+func TestSubscribeAfterNewPluginLoaded(t *testing.T) {
+	// Create workflow map for task
+	wf := new(wmap.WorkflowMap)
+	cn := wmap.NewCollectWorkflowMapNode()
+	cn.Config["/intel/mock/foo"] = make(map[string]interface{})
+	cn.Config["/intel/mock/foo"]["password"] = "mockpass"
+	cn.Config["/intel/anothermock/foo"] = make(map[string]interface{})
+	cn.Config["/intel/anothermock/foo"]["password"] = "anothermockpass"
+	cn.AddMetric("/intel/*/foo", 1)
+	wf.CollectNode = cn
+
+	// Create plugin manager
+	c := control.New(control.GetDefaultConfig())
+	c.Start()
+	time.Sleep(100 * time.Millisecond)
+
+	var schTask *task
+	var s *scheduler
+	mock1Path := path.Join(PluginPath, "snap-collector-mock1")
+	anotherMock1Path := path.Join(PluginPath, "snap-collector-anothermock1")
+
+	Convey("RefreshTaskSubscriptions()", t, func() {
+		Convey("Create new scheduler and set metric manager", func() {
+			s = New(GetDefaultConfig())
+			s.SetMetricManager(c)
+			err := s.Start()
+			So(err, ShouldBeNil)
+			time.Sleep(100 * time.Millisecond)
+		})
+		Convey("Load mock1 plugin", func() {
+			rp, err := core.NewRequestedPlugin(mock1Path)
+			So(err, ShouldBeNil)
+			_, err = c.Load(rp)
+			So(err, ShouldBeNil)
+			time.Sleep(100 * time.Millisecond)
+		})
+		Convey("Create and start task", func() {
+			tsk, errs := s.CreateTask(schedule.NewSimpleSchedule(time.Second), wf, false)
+			So(len(errs.Errors()), ShouldEqual, 0)
+			So(tsk, ShouldNotBeNil)
+			schTask = tsk.(*task)
+			schTask.RemoteManagers.Add("", c)
+			terrs := s.StartTask(schTask.ID())
+			So(terrs, ShouldBeEmpty)
+			time.Sleep(100 * time.Millisecond)
+		})
+		Convey("pluginControl.AvailablePlugins() should return 1 item", func() {
+			plugins := c.AvailablePlugins()
+			So(len(plugins), ShouldEqual, 1)
+		})
+		Convey("Load anothermock1 plugin", func() {
+			rp, err := core.NewRequestedPlugin(anotherMock1Path)
+			So(err, ShouldBeNil)
+			_, err = c.Load(rp)
+			So(err, ShouldBeNil)
+			time.Sleep(1 * time.Second)
+		})
+		Convey("pluginControl.AvailablePlugins() should return 2 items now", func() {
+			plugins := c.AvailablePlugins()
+			So(len(plugins), ShouldEqual, 2)
+		})
+		Convey("Check if config is correct for both plugins", func() {
+			metricMock, err := c.GetMetric(core.NewNamespace("intel", "mock", "foo"), 1)
+			So(err, ShouldBeNil)
+			metricAnotherMock, err := c.GetMetric(core.NewNamespace("intel", "anothermock", "foo"), 1)
+			So(err, ShouldBeNil)
+
+			dataMock, _ := c.CollectMetrics([]core.Metric{metricMock.(core.Metric)}, time.Now().Add(time.Second*1), schTask.ID(), nil)
+			dataAnotherMock, _ := c.CollectMetrics([]core.Metric{metricAnotherMock.(core.Metric)}, time.Now().Add(time.Second*1), schTask.ID(), nil)
+			So(dataMock, ShouldNotBeEmpty)
+			So(dataMock[0].Config().Table()["password"].(ctypes.ConfigValueStr).Value, ShouldEqual, "mockpass")
+			So(dataAnotherMock, ShouldNotBeEmpty)
+			So(dataAnotherMock[0].Config().Table()["password"].(ctypes.ConfigValueStr).Value, ShouldEqual, "anothermockpass")
+		})
+	})
+
+	c.Stop()
+	time.Sleep(100 * time.Millisecond)
 }
