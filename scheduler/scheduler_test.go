@@ -31,9 +31,11 @@ import (
 	log "github.com/Sirupsen/logrus"
 	. "github.com/smartystreets/goconvey/convey"
 
+	"github.com/intelsdi-x/gomit"
 	"github.com/intelsdi-x/snap/control"
 	"github.com/intelsdi-x/snap/core"
 	"github.com/intelsdi-x/snap/core/cdata"
+	"github.com/intelsdi-x/snap/core/control_event"
 	"github.com/intelsdi-x/snap/core/ctypes"
 	"github.com/intelsdi-x/snap/core/serror"
 	"github.com/intelsdi-x/snap/pkg/schedule"
@@ -180,6 +182,27 @@ func (m mockScheduleResponse) err() error {
 
 func (m mockScheduleResponse) missedIntervals() uint {
 	return 0
+}
+
+type listenToPluginEvent struct {
+	pluginLoaded  chan struct{}
+	pluginStarted chan struct{}
+}
+
+func newListenToPluginEvent() *listenToPluginEvent {
+	return &listenToPluginEvent{
+		pluginLoaded:  make(chan struct{}),
+		pluginStarted: make(chan struct{}),
+	}
+}
+
+func (l *listenToPluginEvent) HandleGomitEvent(e gomit.Event) {
+	switch e.Body.(type) {
+	case *control_event.LoadPluginEvent:
+		l.pluginLoaded <- struct{}{}
+	case *control_event.StartPluginEvent:
+		l.pluginStarted <- struct{}{}
+	}
 }
 
 func TestScheduler(t *testing.T) {
@@ -404,27 +427,28 @@ func TestSubscribeAfterNewPluginLoaded(t *testing.T) {
 	// Create plugin manager
 	c := control.New(control.GetDefaultConfig())
 	c.Start()
-	time.Sleep(100 * time.Millisecond)
+
+	lpe := newListenToPluginEvent()
+	c.RegisterEventHandler("Control.PluginLoaded", lpe)
 
 	var schTask *task
 	var s *scheduler
 	mock1Path := path.Join(PluginPath, "snap-collector-mock1")
 	anotherMock1Path := path.Join(PluginPath, "snap-collector-anothermock1")
 
-	Convey("RefreshTaskSubscriptions()", t, func() {
+	Convey("Test subscribe after new plugin loaded", t, func() {
 		Convey("Create new scheduler and set metric manager", func() {
 			s = New(GetDefaultConfig())
 			s.SetMetricManager(c)
 			err := s.Start()
 			So(err, ShouldBeNil)
-			time.Sleep(100 * time.Millisecond)
 		})
 		Convey("Load mock1 plugin", func() {
 			rp, err := core.NewRequestedPlugin(mock1Path)
 			So(err, ShouldBeNil)
 			_, err = c.Load(rp)
 			So(err, ShouldBeNil)
-			time.Sleep(100 * time.Millisecond)
+			<-lpe.pluginLoaded
 		})
 		Convey("Create and start task", func() {
 			tsk, errs := s.CreateTask(schedule.NewSimpleSchedule(time.Second), wf, false)
@@ -434,7 +458,7 @@ func TestSubscribeAfterNewPluginLoaded(t *testing.T) {
 			schTask.RemoteManagers.Add("", c)
 			terrs := s.StartTask(schTask.ID())
 			So(terrs, ShouldBeEmpty)
-			time.Sleep(100 * time.Millisecond)
+			<-lpe.pluginStarted
 		})
 		Convey("pluginControl.AvailablePlugins() should return 1 item", func() {
 			plugins := c.AvailablePlugins()
@@ -445,7 +469,8 @@ func TestSubscribeAfterNewPluginLoaded(t *testing.T) {
 			So(err, ShouldBeNil)
 			_, err = c.Load(rp)
 			So(err, ShouldBeNil)
-			time.Sleep(1 * time.Second)
+			<-lpe.pluginLoaded
+			<-lpe.pluginStarted
 		})
 		Convey("pluginControl.AvailablePlugins() should return 2 items now", func() {
 			plugins := c.AvailablePlugins()
@@ -467,5 +492,4 @@ func TestSubscribeAfterNewPluginLoaded(t *testing.T) {
 	})
 
 	c.Stop()
-	time.Sleep(100 * time.Millisecond)
 }
