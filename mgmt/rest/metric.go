@@ -63,7 +63,7 @@ func (s *Server) getMetricsFromTree(w http.ResponseWriter, r *http.Request, para
 
 	if ns[len(ns)-1] == "*" {
 		if v == "" {
-			ver = -1
+			ver = 0 //return all metrics regardless of version
 		} else {
 			ver, err = strconv.Atoi(v)
 			if err != nil {
