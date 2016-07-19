@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/julienschmidt/httprouter"
 
@@ -32,6 +33,38 @@ import (
 )
 
 func (s *Server) getMetrics(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	ver := -1 // -1: get latest version
+
+	// If we are provided a parameter with the name 'ns' we need to
+	// perform a query
+	q := r.URL.Query()
+	v := q.Get("ver")
+	ns_query := q.Get("ns")
+	if ns_query != "" {
+		ver = -1 // -1: get latest version
+		if v != "" {
+			var err error
+			ver, err = strconv.Atoi(v)
+			if err != nil {
+				respond(400, rbody.FromError(err), w)
+				return
+			}
+		}
+		// strip the leading '/' and split on the remaining '/'
+		ns := strings.Split(strings.TrimLeft(ns_query, "/"), "/")
+		if ns[len(ns)-1] == "*" {
+			ns = ns[:len(ns)-1]
+		}
+
+		mets, err := s.mm.FetchMetrics(core.NewNamespace(ns...), ver)
+		if err != nil {
+			respond(404, rbody.FromError(err), w)
+			return
+		}
+		respondWithMetrics(r.Host, mets, w)
+		return
+	}
+
 	mets, err := s.mm.MetricCatalog()
 	if err != nil {
 		respond(500, rbody.FromError(err), w)
@@ -63,7 +96,7 @@ func (s *Server) getMetricsFromTree(w http.ResponseWriter, r *http.Request, para
 
 	if ns[len(ns)-1] == "*" {
 		if v == "" {
-			ver = 0 //return all metrics regardless of version
+			ver = -1 //return latest metrics
 		} else {
 			ver, err = strconv.Atoi(v)
 			if err != nil {
