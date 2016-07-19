@@ -104,12 +104,8 @@ func (c *Client) GetMetricVersions(ns string) *GetMetricsResult {
 // (array of metrics).
 func (c *Client) GetMetric(ns string, ver int) interface{} {
 	r := &GetMetricResult{}
-	q := fmt.Sprintf("/metrics%s?ver=%d", ns, ver)
-	// If a wildcard query is detected we will pass the namespace query
-	// as a parameter
-	if ns[len(ns)-1] == '*' {
-		q = fmt.Sprintf("/metrics?ns=%s&ver=%d", ns, ver)
-	}
+
+	q := fmt.Sprintf("/metrics?ns=%s&ver=%d", ns, ver)
 	resp, err := c.do("GET", q, ContentTypeJSON)
 	if err != nil {
 		return &GetMetricResult{Err: err}
