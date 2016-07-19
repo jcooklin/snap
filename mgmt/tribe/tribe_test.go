@@ -932,6 +932,7 @@ func TestTribePluginAgreement(t *testing.T) {
 												}
 											}(tr)
 										}
+										wg.Wait()
 
 										Convey("Handles a 'remove plugin' messages broadcasted across the cluster", func(c C) {
 											for _, t := range tribes {
@@ -964,7 +965,7 @@ func TestTribePluginAgreement(t *testing.T) {
 													}
 												}(t)
 											}
-											wg.Done()
+											wg.Wait()
 
 											Convey("Handles out-of-order remove", func() {
 												t := tribes[rand.Intn(numOfTribes)]
@@ -1045,22 +1046,23 @@ func TestTribePluginAgreement(t *testing.T) {
 															for _, t := range tribes {
 																wg.Add(1)
 																go func(t *tribe) {
+																	defer wg.Done()
 																	for {
-																		defer wg.Done()
 																		select {
-																		case <-time.After(1 * time.Second):
-																			c.So(len(t.memberlist.Members()), ShouldEqual, numOfTribes)
+																		case <-time.After(1500 * time.Millisecond):
+																			c.So(len(t.agreements["clan1"].PluginAgreement.Plugins), ShouldEqual, numAddMessages-2)
+																			return
 																		default:
-																			if len(t.agreements["clan1"].PluginAgreement.Plugins) == numAddMessages-1 {
-																				c.So(len(t.agreements["clan1"].PluginAgreement.Plugins), ShouldEqual, numAddMessages-1)
+																			if len(t.agreements["clan1"].PluginAgreement.Plugins) == numAddMessages-2 {
 																				return
 																			}
+																			time.Sleep(time.Millisecond * 50)
 																		}
 
 																	}
 																}(t)
 															}
-															wg.Done()
+															wg.Wait()
 														})
 													})
 												})
