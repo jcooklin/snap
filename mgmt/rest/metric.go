@@ -208,7 +208,7 @@ func respondWithMetrics(host string, mets []core.CatalogedMetric, w http.Respons
 }
 
 func catalogedMetricURI(host string, mt core.CatalogedMetric) string {
-	return fmt.Sprintf("%s://%s/v1/metrics%s?ver=%d", protocolPrefix, host, mt.Namespace().String(), mt.Version())
+	return fmt.Sprintf("%s://%s/v1/metrics?ns=%s&ver=%d", protocolPrefix, host, mt.Namespace().String(), mt.Version())
 }
 
 func getDynamicElements(ns core.Namespace, indexes []int) []rbody.DynamicElement {
