@@ -1,4 +1,4 @@
-// +build legacy small medium large
+// + build legacy small medium large
 
 /*
 http://www.apache.org/licenses/LICENSE-2.0.txt
@@ -26,6 +26,8 @@ import (
 	"github.com/intelsdi-x/snap/control/plugin/cpolicy"
 	"github.com/intelsdi-x/snap/core"
 	"github.com/intelsdi-x/snap/core/serror"
+	"github.com/intelsdi-x/snap/pkg/schedule"
+	"github.com/intelsdi-x/snap/scheduler/wmap"
 )
 
 type MockLoadedPlugin struct {
@@ -98,7 +100,49 @@ func (m MockManagesMetrics) GetAutodiscoverPaths() []string {
 	return nil
 }
 
-const GET_PLUGINS_RESPONSE = `{
+////////////////
+type mockTask struct{}
+
+func (t *mockTask) ID() string                                { return "" }
+func (t *mockTask) State() core.TaskState                     { return core.TaskSpinning }
+func (t *mockTask) HitCount() uint                            { return 0 }
+func (t *mockTask) GetName() string                           { return "" }
+func (t *mockTask) SetName(string)                            { return }
+func (t *mockTask) SetID(string)                              { return }
+func (t *mockTask) MissedCount() uint                         { return 0 }
+func (t *mockTask) FailedCount() uint                         { return 0 }
+func (t *mockTask) LastFailureMessage() string                { return "" }
+func (t *mockTask) LastRunTime() *time.Time                   { return nil }
+func (t *mockTask) CreationTime() *time.Time                  { return nil }
+func (t *mockTask) DeadlineDuration() time.Duration           { return 0 }
+func (t *mockTask) SetDeadlineDuration(time.Duration)         { return }
+func (t *mockTask) SetTaskID(id string)                       { return }
+func (t *mockTask) SetStopOnFailure(int)                      { return }
+func (t *mockTask) GetStopOnFailure() int                     { return 0 }
+func (t *mockTask) Option(...core.TaskOption) core.TaskOption { return core.TaskDeadlineDuration(0) }
+func (t *mockTask) WMap() *wmap.WorkflowMap                   { return nil }
+func (t *mockTask) Schedule() schedule.Schedule               { return nil }
+func (t *mockTask) MaxFailures() int                          { return 10 }
+
+type MockManagesTasks struct{}
+
+func (m *MockManagesTasks) GetTask(id string) (core.Task, error) { return &mockTask{}, nil }
+func (m *MockManagesTasks) CreateTask(sch schedule.Schedule, wmap *wmap.WorkflowMap, start bool, opts ...core.TaskOption) (core.Task, core.TaskErrors) {
+	return nil, nil
+}
+func (m *MockManagesTasks) GetTasks() map[string]core.Task         { return nil }
+func (m *MockManagesTasks) StartTask(id string) []serror.SnapError { return nil }
+func (m *MockManagesTasks) StopTask(id string) []serror.SnapError  { return nil }
+func (m *MockManagesTasks) RemoveTask(id string) error             { return nil }
+func (m *MockManagesTasks) WatchTask(id string, handler core.TaskWatcherHandler) (core.TaskWatcherCloser, error) {
+	return nil, nil
+}
+func (m *MockManagesTasks) EnableTask(id string) (core.Task, error) { return nil, nil }
+
+////////////////
+
+const (
+	GET_PLUGINS_RESPONSE = `{
   "meta": {
     "code": 200,
     "message": "Plugin list returned",
@@ -164,3 +208,35 @@ const GET_PLUGINS_RESPONSE = `{
     ]
   }
 }`
+
+	GET_PLUGINS_RESPONSE_TYPE = `{
+  "meta": {
+    "code": 200,
+    "message": "Plugin list returned",
+    "type": "plugin_list_returned",
+    "version": 1
+  },
+  "body": {
+    "loaded_plugins": [
+      {
+        "name": "foo",
+        "version": 0,
+        "type": "collector",
+        "signed": false,
+        "status": "",
+        "loaded_timestamp": 1473120000,
+        "href": "http://localhost:%d/v1/plugins/collector/foo/0"
+      },
+      {
+        "name": "foo",
+        "version": 0,
+        "type": "collector",
+        "signed": false,
+        "status": "",
+        "loaded_timestamp": 1473120000,
+        "href": "http://localhost:%d/v1/plugins/collector/foo/0"
+      }
+    ]
+  }
+}`
+)

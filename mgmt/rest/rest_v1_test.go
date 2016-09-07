@@ -48,7 +48,9 @@ func startV1API(cfg *mockConfig) *restAPIInstance {
 	mockMetricManager := &fixtures.MockManagesMetrics{}
 	r, _ := New(cfg.RestAPI)
 	r.BindMetricManager(mockMetricManager)
+	mockTaskManager := &fixtures.MockManagesTasks{}
 	//TODO bind mock task manager r.BindTaskManager(s)
+	r.BindTaskManager(mockTaskManager)
 	//TODO bind mock config manager r.BindConfigManager(c.Config)
 	go func(ch <-chan error) {
 		// Block on the error channel. Will return exit status 1 for an error or
@@ -77,10 +79,22 @@ func TestV1(t *testing.T) {
 			So(resp.StatusCode, ShouldEqual, 200)
 			body, err := ioutil.ReadAll(resp.Body)
 			So(err, ShouldBeNil)
-			fmt.Print(string(body))
 			So(
 				fmt.Sprintf(fixtures.GET_PLUGINS_RESPONSE, r.port, r.port,
 					r.port, r.port, r.port, r.port),
+				ShouldResemble,
+				string(body))
+		})
+		Convey("Get plugins - v1/plugins/:type", func() {
+			resp, err := http.Get(
+				fmt.Sprintf("http://localhost:%d/v1/plugins/collector", r.port))
+			So(err, ShouldBeNil)
+			So(resp.StatusCode, ShouldEqual, 200)
+			body, err := ioutil.ReadAll(resp.Body)
+			So(err, ShouldBeNil)
+			fmt.Print(string(body))
+			So(
+				fmt.Sprintf(fixtures.GET_PLUGINS_RESPONSE_TYPE, r.port, r.port),
 				ShouldResemble,
 				string(body))
 		})
