@@ -31,13 +31,14 @@ import (
 )
 
 type MockLoadedPlugin struct {
-	MyName string
-	MyType string
+	MyName    string
+	MyType    string
+	MyVersion int
 }
 
 func (m MockLoadedPlugin) Name() string       { return m.MyName }
 func (m MockLoadedPlugin) TypeName() string   { return m.MyType }
-func (m MockLoadedPlugin) Version() int       { return 0 }
+func (m MockLoadedPlugin) Version() int       { return m.MyVersion }
 func (m MockLoadedPlugin) Plugin() string     { return "" }
 func (m MockLoadedPlugin) IsSigned() bool     { return false }
 func (m MockLoadedPlugin) Status() string     { return "" }
@@ -46,7 +47,7 @@ func (m MockLoadedPlugin) LoadedTimestamp() *time.Time {
 	t := time.Date(2016, time.September, 6, 0, 0, 0, 0, time.UTC)
 	return &t
 }
-func (m MockLoadedPlugin) Policy() *cpolicy.ConfigPolicy { return nil }
+func (m MockLoadedPlugin) Policy() *cpolicy.ConfigPolicy { return cpolicy.New() }
 
 // have my mock object also support AvailablePlugin
 func (m MockLoadedPlugin) HitCount() int { return 0 }
@@ -78,22 +79,22 @@ func (m MockManagesMetrics) Unload(core.Plugin) (core.CatalogedPlugin, serror.Sn
 
 func (m MockManagesMetrics) PluginCatalog() core.PluginCatalog {
 	return []core.CatalogedPlugin{
-		MockLoadedPlugin{MyName: "foo", MyType: "collector"},
-		MockLoadedPlugin{MyName: "bar", MyType: "publisher"},
-		MockLoadedPlugin{MyName: "foo", MyType: "collector"},
-		MockLoadedPlugin{MyName: "baz", MyType: "publisher"},
-		MockLoadedPlugin{MyName: "foo", MyType: "processor"},
-		MockLoadedPlugin{MyName: "foobar", MyType: "processor"},
+		MockLoadedPlugin{MyName: "foo", MyType: "collector", MyVersion: 2},
+		MockLoadedPlugin{MyName: "bar", MyType: "publisher", MyVersion: 3},
+		MockLoadedPlugin{MyName: "foo", MyType: "collector", MyVersion: 4},
+		MockLoadedPlugin{MyName: "baz", MyType: "publisher", MyVersion: 5},
+		MockLoadedPlugin{MyName: "foo", MyType: "processor", MyVersion: 6},
+		MockLoadedPlugin{MyName: "foobar", MyType: "processor", MyVersion: 1},
 	}
 }
 func (m MockManagesMetrics) AvailablePlugins() []core.AvailablePlugin {
 	return []core.AvailablePlugin{
-		MockLoadedPlugin{MyName: "foo", MyType: "collector"},
-		MockLoadedPlugin{MyName: "bar", MyType: "publisher"},
-		MockLoadedPlugin{MyName: "foo", MyType: "collector"},
-		MockLoadedPlugin{MyName: "baz", MyType: "publisher"},
-		MockLoadedPlugin{MyName: "foo", MyType: "processor"},
-		MockLoadedPlugin{MyName: "foobar", MyType: "processor"},
+		MockLoadedPlugin{MyName: "foo", MyType: "collector", MyVersion: 2},
+		MockLoadedPlugin{MyName: "bar", MyType: "publisher", MyVersion: 3},
+		MockLoadedPlugin{MyName: "foo", MyType: "collector", MyVersion: 4},
+		MockLoadedPlugin{MyName: "baz", MyType: "publisher", MyVersion: 5},
+		MockLoadedPlugin{MyName: "foo", MyType: "processor", MyVersion: 6},
+		MockLoadedPlugin{MyName: "foobar", MyType: "processor", MyVersion: 1},
 	}
 }
 func (m MockManagesMetrics) GetAutodiscoverPaths() []string {
@@ -153,57 +154,57 @@ const (
     "loaded_plugins": [
       {
         "name": "foo",
-        "version": 0,
+        "version": 2,
         "type": "collector",
         "signed": false,
         "status": "",
         "loaded_timestamp": 1473120000,
-        "href": "http://localhost:%d/v1/plugins/collector/foo/0"
+        "href": "http://localhost:%d/v1/plugins/collector/foo/2"
       },
       {
         "name": "bar",
-        "version": 0,
+        "version": 3,
         "type": "publisher",
         "signed": false,
         "status": "",
         "loaded_timestamp": 1473120000,
-        "href": "http://localhost:%d/v1/plugins/publisher/bar/0"
+        "href": "http://localhost:%d/v1/plugins/publisher/bar/3"
       },
       {
         "name": "foo",
-        "version": 0,
+        "version": 4,
         "type": "collector",
         "signed": false,
         "status": "",
         "loaded_timestamp": 1473120000,
-        "href": "http://localhost:%d/v1/plugins/collector/foo/0"
+        "href": "http://localhost:%d/v1/plugins/collector/foo/4"
       },
       {
         "name": "baz",
-        "version": 0,
+        "version": 5,
         "type": "publisher",
         "signed": false,
         "status": "",
         "loaded_timestamp": 1473120000,
-        "href": "http://localhost:%d/v1/plugins/publisher/baz/0"
+        "href": "http://localhost:%d/v1/plugins/publisher/baz/5"
       },
       {
         "name": "foo",
-        "version": 0,
+        "version": 6,
         "type": "processor",
         "signed": false,
         "status": "",
         "loaded_timestamp": 1473120000,
-        "href": "http://localhost:%d/v1/plugins/processor/foo/0"
+        "href": "http://localhost:%d/v1/plugins/processor/foo/6"
       },
       {
         "name": "foobar",
-        "version": 0,
+        "version": 1,
         "type": "processor",
         "signed": false,
         "status": "",
         "loaded_timestamp": 1473120000,
-        "href": "http://localhost:%d/v1/plugins/processor/foobar/0"
+        "href": "http://localhost:%d/v1/plugins/processor/foobar/1"
       }
     ]
   }
@@ -220,23 +221,91 @@ const (
     "loaded_plugins": [
       {
         "name": "foo",
-        "version": 0,
+        "version": 2,
         "type": "collector",
         "signed": false,
         "status": "",
         "loaded_timestamp": 1473120000,
-        "href": "http://localhost:%d/v1/plugins/collector/foo/0"
+        "href": "http://localhost:%d/v1/plugins/collector/foo/2"
       },
       {
         "name": "foo",
-        "version": 0,
+        "version": 4,
         "type": "collector",
         "signed": false,
         "status": "",
         "loaded_timestamp": 1473120000,
-        "href": "http://localhost:%d/v1/plugins/collector/foo/0"
+        "href": "http://localhost:%d/v1/plugins/collector/foo/4"
       }
     ]
   }
+}`
+
+	GET_PLUGINS_RESPONSE_TYPE_NAME = `{
+  "meta": {
+    "code": 200,
+    "message": "Plugin list returned",
+    "type": "plugin_list_returned",
+    "version": 1
+  },
+  "body": {
+    "loaded_plugins": [
+      {
+        "name": "bar",
+        "version": 3,
+        "type": "publisher",
+        "signed": false,
+        "status": "",
+        "loaded_timestamp": 1473120000,
+        "href": "http://localhost:%d/v1/plugins/publisher/bar/3"
+      }
+    ]
+  }
+}`
+
+	GET_PLUGINS_RESPONSE_TYPE_NAME_VERSION = `{
+  "meta": {
+    "code": 200,
+    "message": "Plugin returned",
+    "type": "plugin_returned",
+    "version": 1
+  },
+  "body": {
+    "name": "bar",
+    "version": 3,
+    "type": "publisher",
+    "signed": false,
+    "status": "",
+    "loaded_timestamp": 1473120000,
+    "href": "http://localhost:%d/v1/plugins/publisher/bar/3"
+  }
+}`
+
+	GET_PLUGIN_CONFIG_ITEM = `{
+  "meta": {
+    "code": 200,
+    "message": "Plugin returned",
+    "type": "plugin_returned",
+    "version": 1
+  },
+  "body": {
+    "name": "bar",
+    "version": 3,
+    "type": "publisher",
+    "signed": false,
+    "status": "",
+    "loaded_timestamp": 1473120000,
+    "href": "http://localhost:%d/v1/plugins/publisher/bar/3"
+  }
+}`
+
+	GET_METRICS_RESPONSE = `{
+  "meta": {
+    "code": 200,
+    "message": "Metrics returned",
+    "type": "metrics_returned",
+    "version": 1
+  },
+  "body": []
 }`
 )

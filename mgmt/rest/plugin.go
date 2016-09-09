@@ -90,6 +90,7 @@ func (s *Server) loadPlugin(w http.ResponseWriter, r *http.Request, _ httprouter
 				break
 			}
 			if err != nil {
+				restLogger.Errorf("WE ARE HERE")
 				respond(500, rbody.FromError(err), w)
 				return
 			}
@@ -185,6 +186,7 @@ func (s *Server) loadPlugin(w http.ResponseWriter, r *http.Request, _ httprouter
 		lp.LoadedPlugins = append(lp.LoadedPlugins, *catalogedPluginToLoaded(r.Host, pl))
 		respond(201, lp, w)
 	}
+	respond(500, rbody.FromError(errors.New("unknown error")), w)
 }
 
 func writeFile(filename string, b []byte) (string, error) {

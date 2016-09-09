@@ -456,19 +456,19 @@ func (s *Server) BindConfigManager(c managesConfig) {
 
 func (s *Server) addRoutes() {
 	// plugin routes
-	s.r.GET("/v1/plugins", s.getPlugins)
-	s.r.GET("/v1/plugins/:type", s.getPlugins)
-	s.r.GET("/v1/plugins/:type/:name", s.getPlugins)
-	s.r.GET("/v1/plugins/:type/:name/:version", s.getPlugin)
+	s.r.GET("/v1/plugins", s.getPlugins)                     //done
+	s.r.GET("/v1/plugins/:type", s.getPlugins)               //done
+	s.r.GET("/v1/plugins/:type/:name", s.getPlugins)         //done
+	s.r.GET("/v1/plugins/:type/:name/:version", s.getPlugin) //done
 	s.r.POST("/v1/plugins", s.loadPlugin)
 	s.r.DELETE("/v1/plugins/:type/:name/:version", s.unloadPlugin)
-	s.r.GET("/v1/plugins/:type/:name/:version/config", s.getPluginConfigItem)
+	s.r.GET("/v1/plugins/:type/:name/:version/config", s.getPluginConfigItem) //done
 	s.r.PUT("/v1/plugins/:type/:name/:version/config", s.setPluginConfigItem)
 	s.r.DELETE("/v1/plugins/:type/:name/:version/config", s.deletePluginConfigItem)
 
 	// metric routes
-	s.r.GET("/v1/metrics", s.getMetrics)
-	s.r.GET("/v1/metrics/*namespace", s.getMetricsFromTree)
+	s.r.GET("/v1/metrics", s.getMetrics)                    //done- NOT RIGHT
+	s.r.GET("/v1/metrics/*namespace", s.getMetricsFromTree) //same implementation as above
 
 	// task routes
 	s.r.GET("/v1/tasks", s.getTasks)
