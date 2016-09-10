@@ -1,4 +1,4 @@
-// + build medium
+// +build medium
 
 /*
 http://www.apache.org/licenses/LICENSE-2.0.txt
@@ -22,7 +22,10 @@ limitations under the License.
 package rest
 
 import (
+	"bufio"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -126,50 +129,49 @@ func TestV1(t *testing.T) {
 		// 		string(body))
 		// })
 
-		Convey("Post plugins - v1/plugins/:type:name", func() {
-			// TODO add an issue that describes how posting an empty body should result in an error
-			// it currently returns success (200)
-
-			// resp1, err1 := http.Post(
-			// 	fmt.Sprintf("http://localhost:%d/v1/plugins", r.port), "text/plain", strings.NewReader("body"))
-			// So(err1, ShouldBeNil)
-			// So(resp1.StatusCode, ShouldEqual, 200)
-
+		Convey("Post plugins - v1/plugins/:type:name", func(c C) {
 			f, err := os.Open(MOCK_PLUGIN_PATH1)
+			defer f.Close()
 			So(err, ShouldBeNil)
 
-			// resp1, err1 := http.Post(
-			// 	fmt.Sprintf("http://localhost:%d/v1/plugins", r.port), "multipart/form-data", f)
-			// So(err1, ShouldBeNil)
-			// // So(resp1.StatusCode, ShouldEqual, 200)
-			// body, err := ioutil.ReadAll(resp1.Body)
-			// So(err, ShouldBeNil)
-			// fmt.Printf("!!!!!  %v", string(body))
+			// We create a pipe so that we can write the file in multipart
+			// format and read it in to the body of the http request
+			reader, writer := io.Pipe()
+			mwriter := multipart.NewWriter(writer)
+			bufin := bufio.NewReader(f)
 
-			writer := multipart.NewWriter(f)
+			// A go routine is needed since we must write the multipart file
+			// to the pipe so we can read from it in the http call
+			go func() {
+				part, err := mwriter.CreateFormFile("snap-plugins", "mock")
+				c.So(err, ShouldBeNil)
+				bufin.WriteTo(part)
+				mwriter.Close()
+				writer.Close()
+			}()
 
-			req, err := http.NewRequest("POST", fmt.Sprintf("http://localhost:%d/v1/plugins", r.port), f)
-			So(err, ShouldBeNil)
-
-			req.Header.Add("Content-Type", writer.FormDataContentType())
-
+			resp1, err1 := http.Post(
+				fmt.Sprintf("http://localhost:%d/v1/plugins", r.port),
+				mwriter.FormDataContentType(), reader)
+			So(err1, ShouldBeNil)
+			So(resp1.StatusCode, ShouldEqual, 201)
 		})
-		//Convey("Delete plugins - v1/plugins/:type:name:version", func() {		})
+		Convey("Delete plugins - v1/plugins/:type:name:version", func() {})
 
-		// Convey("Get plugin config items - v1/plugins/:type:name:version:config", func() {
-		// 	resp, err := http.Get(
-		// 		fmt.Sprintf("http://localhost:%d/v1/plugins/publisher/bar/3/", r.port))
-		// 	So(err, ShouldBeNil)
-		// 	So(resp.StatusCode, ShouldEqual, 200)
-		// 	body, err := ioutil.ReadAll(resp.Body)
-		// 	So(err, ShouldBeNil)
-		// 	So(
-		// 		fmt.Sprintf(fixtures.GET_PLUGIN_CONFIG_ITEM, r.port),
-		// 		ShouldResemble,
-		// 		string(body))
-		// })
+		Convey("Get plugin config items - v1/plugins/:type:name:version:config", func() {
+			resp, err := http.Get(
+				fmt.Sprintf("http://localhost:%d/v1/plugins/publisher/bar/3/", r.port))
+			So(err, ShouldBeNil)
+			So(resp.StatusCode, ShouldEqual, 200)
+			body, err := ioutil.ReadAll(resp.Body)
+			So(err, ShouldBeNil)
+			So(
+				fmt.Sprintf(fixtures.GET_PLUGIN_CONFIG_ITEM, r.port),
+				ShouldResemble,
+				string(body))
+		})
 
-		// //////////TEST-METRIC-ROUTES/////////////////
+		////////////TEST-METRIC-ROUTES/////////////////
 
 		// Convey("Get metric items - v1/metrics", func() {
 		// 	resp, err := http.Get(

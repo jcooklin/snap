@@ -71,7 +71,7 @@ func (m MockManagesMetrics) GetMetric(core.Namespace, int) (core.CatalogedMetric
 	return nil, nil
 }
 func (m MockManagesMetrics) Load(*core.RequestedPlugin) (core.CatalogedPlugin, serror.SnapError) {
-	return nil, nil
+	return MockLoadedPlugin{"foo", "collector", 1}, nil
 }
 func (m MockManagesMetrics) Unload(core.Plugin) (core.CatalogedPlugin, serror.SnapError) {
 	return nil, nil
