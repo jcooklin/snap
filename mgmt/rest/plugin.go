@@ -29,6 +29,7 @@ import (
 	"mime"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -47,8 +48,9 @@ import (
 const PluginAlreadyLoaded = "plugin is already loaded"
 
 var (
-	ErrMissingPluginName = errors.New("missing plugin name")
-	ErrPluginNotFound    = errors.New("plugin not found")
+	ErrMissingPluginName    = errors.New("missing plugin name")
+	ErrPluginNotFound       = errors.New("plugin not found")
+	ErrUnescapingPluginName = errors.New("error unescaping plugin name")
 )
 
 type plugin struct {
@@ -214,7 +216,12 @@ func writeFile(filename string, b []byte) (string, error) {
 }
 
 func (s *Server) unloadPlugin(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	plName := p.ByName("name")
+	plName, err := url.QueryUnescape(p.ByName("name"))
+	if err != nil {
+		se := serror.New(ErrUnescapingPluginName)
+		respond(400, rbody.FromSnapError(se), w)
+		return
+	}
 	plType := p.ByName("type")
 	plVersion, iErr := strconv.ParseInt(p.ByName("version"), 10, 0)
 	f := map[string]interface{}{
@@ -267,7 +274,13 @@ func (s *Server) getPlugins(w http.ResponseWriter, r *http.Request, params httpr
 			detail = true
 		}
 	}
-	plName := params.ByName("name")
+
+	plName, err := url.QueryUnescape(params.ByName("name"))
+	if err != nil {
+		se := serror.New(ErrUnescapingPluginName)
+		respond(400, rbody.FromSnapError(se), w)
+		return
+	}
 	plType := params.ByName("type")
 	respond(200, getPlugins(s.mm, detail, r.Host, plName, plType), w)
 }
@@ -349,7 +362,12 @@ func catalogedPluginToLoaded(host string, c core.CatalogedPlugin) *rbody.LoadedP
 }
 
 func (s *Server) getPlugin(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	plName := p.ByName("name")
+	plName, err := url.QueryUnescape(p.ByName("name"))
+	if err != nil {
+		se := serror.New(ErrUnescapingPluginName)
+		respond(400, rbody.FromSnapError(se), w)
+		return
+	}
 	plType := p.ByName("type")
 	plVersion, iErr := strconv.ParseInt(p.ByName("version"), 10, 0)
 	f := map[string]interface{}{
