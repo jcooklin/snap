@@ -331,7 +331,18 @@ func (s *scheduler) createTask(sch schedule.Schedule, wfMap *wmap.WorkflowMap, s
 
 	// Group dependencies by the node they live on
 	// and validate them.
-	depGroups := getWorkflowPlugins(wf.processNodes, wf.publishNodes, wf.metrics)
+	var copyOfPublishers []*publishNode
+	for _, pub := range wf.publishNodes {
+		copyOfPub := &publishNode{}
+		copyOfConfig := cdata.NewNode()
+		*copyOfPub = *pub
+		for k, v := range pub.Config().Table() {
+			copyOfConfig.AddItem(k, v)
+		}
+		copyOfPub.config = copyOfConfig
+		copyOfPublishers = append(copyOfPublishers, copyOfPub)
+	}
+	depGroups := getWorkflowPlugins(wf.processNodes, copyOfPublishers, wf.metrics)
 	for k, group := range depGroups {
 		manager, err := task.RemoteManagers.Get(k)
 		if err != nil {
@@ -483,7 +494,18 @@ func (s *scheduler) startTask(id, source string) []serror.SnapError {
 
 	// Group dependencies by the node they live on
 	// and subscribe to them.
-	depGroups := getWorkflowPlugins(t.workflow.processNodes, t.workflow.publishNodes, t.workflow.metrics)
+	var copyOfPublishers []*publishNode
+	for _, pub := range t.workflow.publishNodes {
+		copyOfPub := &publishNode{}
+		copyOfConfig := cdata.NewNode()
+		*copyOfPub = *pub
+		for k, v := range pub.Config().Table() {
+			copyOfConfig.AddItem(k, v)
+		}
+		copyOfPub.config = copyOfConfig
+		copyOfPublishers = append(copyOfPublishers, copyOfPub)
+	}
+	depGroups := getWorkflowPlugins(t.workflow.processNodes, copyOfPublishers, t.workflow.metrics)
 	var subbedDeps []string
 	for k := range depGroups {
 		var errs []serror.SnapError

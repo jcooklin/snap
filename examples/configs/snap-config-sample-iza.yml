@@ -1,0 +1,7 @@
+---
+control:
+  plugins:
+    publisher:
+      mock-file:
+        all:
+          file: "/tmp/snap-iza.out"

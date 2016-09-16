@@ -742,11 +742,15 @@ func (p *pluginControl) getMetricsAndCollectors(requested []core.RequestedMetric
 				if config == nil {
 					config = cdata.NewNode()
 				}
+				configCopy := cdata.NewNode()
+				for k, v := range config.Table() {
+					configCopy.AddItem(k, v)
+				}
 				plugin := subscribedPlugin{
 					name:     m.Plugin.Name(),
 					typeName: m.Plugin.TypeName(),
 					version:  m.Plugin.Version(),
-					config:   config,
+					config:   configCopy,
 				}
 
 				if !containsPlugin(newPlugins, plugin) {
