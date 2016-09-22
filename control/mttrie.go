@@ -180,6 +180,13 @@ func (mtt *mttNode) GetMetric(ns []string, ver int) (*metricType, error) {
 	}
 	// there is an expectation that only one metric should be fitted
 	if len(mts) > 1 {
+		// If multiple entries are returned and one of them is static return it
+		for _, m := range mts {
+			if dynamic, _ := m.namespace.IsDynamic(); !dynamic {
+				return m, nil
+			}
+		}
+
 		return nil, fmt.Errorf("Incoming namespace `%s` is too ambiguous (version: %d)", "/"+strings.Join(ns, "/"), ver)
 	}
 	return mts[0], nil
