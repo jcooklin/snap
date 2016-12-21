@@ -272,7 +272,7 @@ func (s *schedulerWorkflow) Start(t *task) {
 	workJobs(s.processNodes, s.publishNodes, t, j)
 }
 
-func (s *schedulerWorkflow) StreamDatShit(t *task, metrics []core.Metric) {
+func (s *schedulerWorkflow) StreamStart(t *task, metrics []core.Metric) {
 	// take the metrics here and kickoff workflow
 
 	j := &collectorJob{

@@ -102,6 +102,7 @@ func newTask(s schedule.Schedule, wf *schedulerWorkflow, m *workManager, mm mana
 	if err != nil {
 		return nil, err
 	}
+	_, stream := s.(*schedule.StreamingSchedule)
 	task := &task{
 		id:               taskID,
 		name:             name,
@@ -116,7 +117,7 @@ func newTask(s schedule.Schedule, wf *schedulerWorkflow, m *workManager, mm mana
 		stopOnFailure:    DefaultStopOnFailure,
 		eventEmitter:     emitter,
 		RemoteManagers:   mgrs,
-		isStream:         true,
+		isStream:         stream,
 	}
 	//set options
 	for _, opt := range opts {
@@ -219,7 +220,10 @@ func (t *task) Spin() {
 	// We need to lock long enough to change state
 	t.Lock()
 	defer t.Unlock()
+	// if this task is a streaming task.
 	if t.isStream {
+		t.state = core.TaskSpinning
+		t.killChan = make(chan struct{})
 		go t.stream()
 		return
 	}
@@ -240,9 +244,16 @@ func (t *task) Spin() {
 // Fork stream stuff here
 func (t *task) stream() {
 	// call streammetrics
+	// TODO(CDR): Deal with failure.
 	ch, _ := t.metricsManager.StreamMetrics(t.id, t.workflow.tags)
-	for mts := range ch {
-		t.workflow.StreamDatShit(t, mts)
+	for {
+		select {
+		case <-t.killChan:
+			t.state = core.TaskStopped
+			break
+		case mts := <-ch:
+			t.workflow.StreamStart(t, mts)
+		}
 	}
 }
 
