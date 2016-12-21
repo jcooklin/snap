@@ -466,8 +466,6 @@ func (mc *metricCatalog) GetMetrics(requested core.Namespace, version int) ([]*m
 	defer mc.mutex.Unlock()
 
 	returnedmts := []*metricType{}
-	// TODO(CDR): REMOVE
-	return returnedmts, nil
 	// resolve queried tuples in metric namespace
 	requestedNss := findTuplesMatches(requested)
 	for _, rns := range requestedNss {
