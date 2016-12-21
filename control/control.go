@@ -905,6 +905,62 @@ func (p *pluginControl) MetricExists(mns core.Namespace, ver int) bool {
 	return false
 }
 
+func (p *pluginControl) StreamMetrics(id string, allTags map[string]map[string]string) (<-chan []core.Metric, []error) {
+	if !p.Started {
+		return nil, []error{ErrControllerNotStarted}
+	}
+	errs := make([]error, 0)
+	ch := make(chan []core.Metric)
+	go FakeItTillYouMakeIt(ch)
+	/*	plugintoMetricMap, serrs, err := p.subscriptionGroups.Get(id)
+		if err != nil {
+			controlLogger.WithFields(log.Fields{
+				"_block":                "CollectMetrics",
+				"subscription-group-id": id,
+			}).Error(err)
+			errs = append(errs, err)
+			return
+		}
+		// If We received errors when the requested metrics were last processed
+		// against the metric catalog we need to return them to the caller.
+		if serrs != nil {
+			for _, e := range serrs {
+				errs = append(errs, e)
+			}
+		}
+		// We only want at most 1 collector plugin so on more we error
+		if len(pluginToMetricMap) > 1 {
+			return nil, append(errs, errors.New("Only able to have 1 streaming collection plugin"))
+		}
+
+		// For each available plugin call available plugin using RPC client and wait for response (goroutines)
+		for pluginKey, pmt := range pluginToMetricMap {
+			// merge global plugin config into the config for the metric
+			for _, mt := range pmt.metricTypes {
+				if mt.Config() != nil {
+					mt.Config().ReverseMergeInPlace(p.Config.Plugins.getPluginConfigDataNode(core.CollectorPluginType, pmt.plugin.Name(), pmt.plugin.Version()))
+				}
+			}
+			go FakeItTillYouMakeIt(ch)
+		}*/
+	return ch, errs
+}
+
+func FakeItTillYouMakeIt(ch chan []core.Metric) {
+	cnt := 0
+	mt := plugin.MetricType{
+		Namespace_: core.NewNamespace("my", "shit", "is", "broked", "af"),
+		Data_:      cnt,
+	}
+
+	for {
+		ch <- []core.Metric{mt}
+		cnt++
+		mt.Data_ = cnt
+		time.Sleep(time.Second)
+	}
+}
+
 // CollectMetrics is a blocking call to collector plugins returning a collection
 // of metrics and errors.  If an error is encountered no metrics will be
 // returned.
@@ -919,7 +975,7 @@ func (p *pluginControl) CollectMetrics(id string, allTags map[string]map[string]
 	pluginToMetricMap, serrs, err := p.subscriptionGroups.Get(id)
 	if err != nil {
 		controlLogger.WithFields(log.Fields{
-			"_block":                "CollectorMetrics",
+			"_block":                "CollectMetrics",
 			"subscription-group-id": id,
 		}).Error(err)
 		errs = append(errs, err)

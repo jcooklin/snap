@@ -81,6 +81,10 @@ func (c ControlProxy) PublishMetrics(metrics []core.Metric,
 	return errs
 }
 
+func (c ControlProxy) StreamMetrics(id string, tags map[string]map[string]string) (<-chan []core.Metric, []error) {
+	return nil, []error{errors.New("WHAT THE FUCK! DONT DO THAT")}
+}
+
 func (c ControlProxy) ProcessMetrics(metrics []core.Metric,
 	config map[string]ctypes.ConfigValue,
 	taskId string,

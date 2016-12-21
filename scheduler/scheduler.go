@@ -85,6 +85,7 @@ func newDepGroup() depGroupMap {
 // ManagesMetric is implemented by control
 // On startup a scheduler will be created and passed a reference to control
 type managesMetrics interface {
+	streamsMetrics
 	collectsMetrics
 	publishesMetrics
 	processesMetrics
@@ -92,6 +93,10 @@ type managesMetrics interface {
 	ValidateDeps([]core.RequestedMetric, []core.SubscribedPlugin, *cdata.ConfigDataTree) []serror.SnapError
 	SubscribeDeps(string, []core.RequestedMetric, []core.SubscribedPlugin, *cdata.ConfigDataTree) []serror.SnapError
 	UnsubscribeDeps(string) []serror.SnapError
+}
+
+type streamsMetrics interface {
+	StreamMetrics(string, map[string]map[string]string) (<-chan []core.Metric, []error)
 }
 
 type collectsMetrics interface {

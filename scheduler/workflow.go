@@ -23,6 +23,7 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"time"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/intelsdi-x/gomit"
@@ -268,6 +269,20 @@ func (s *schedulerWorkflow) Start(t *task) {
 	defer s.eventEmitter.Emit(event)
 
 	// walk through the tree and dispatch work
+	workJobs(s.processNodes, s.publishNodes, t, j)
+}
+
+func (s *schedulerWorkflow) StreamDatShit(t *task, metrics []core.Metric) {
+	// take the metrics here and kickoff workflow
+
+	j := &collectorJob{
+		collector:      t.metricsManager,
+		metricTypes:    []core.RequestedMetric{},
+		metrics:        metrics,
+		coreJob:        newCoreJob(collectJobType, time.Now().Add(t.deadlineDuration), t.id, "", 0),
+		configDataTree: t.workflow.configTree,
+		tags:           t.workflow.tags,
+	}
 	workJobs(s.processNodes, s.publishNodes, t, j)
 }
 
