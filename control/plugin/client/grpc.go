@@ -259,7 +259,7 @@ func (g *grpcClient) StreamMetrics(mts []core.Metric) (<-chan []core.Metric, err
 	arg := &rpc.MetricsArg{
 		Metrics: NewMetrics(mts),
 	}
-	s, err := g.streamer.StreamMetrics(getContext(g.timeout), arg)
+	s, err := g.streamer.StreamMetrics(context.Background(), arg)
 	if err != nil {
 		return nil, err
 	}
@@ -270,12 +270,19 @@ func (g *grpcClient) StreamMetrics(mts []core.Metric) (<-chan []core.Metric, err
 func stream(stream rpc.StreamCollector_StreamMetricsClient, ch chan []core.Metric) {
 	for {
 		in, err := stream.Recv()
+		fmt.Println("Metrics received in client!")
 		// TODO(CDR): HANDLE EOF separately and logresults
 		if err != nil {
 			close(ch)
 			break
 		}
 		mts := ToCoreMetrics(in.Metrics)
+		// TODO(CDR): REMOVE
+		if len(mts) == 0 {
+			fmt.Println("\n\n NO METRICS \n\n")
+			continue
+		}
+		fmt.Println("\n\n SENDING METRICS FROM CLIENT\n\n")
 		ch <- mts
 	}
 }

@@ -66,6 +66,9 @@ func (p *snapError) Fields() map[string]interface{} {
 }
 
 func (p *snapError) Error() string {
+	if p.err == nil {
+		return ""
+	}
 	return p.err.Error()
 }
 

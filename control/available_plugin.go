@@ -390,6 +390,51 @@ func (ap *availablePlugins) getPool(key string) (strategy.Pool, serror.SnapError
 	return pool, nil
 }
 
+func (ap *availablePlugins) streamMetrics(pluginKey string, metricTypes []core.Metric, taskID string) (<-chan []core.Metric, error) {
+	pool, serr := ap.getPool(pluginKey)
+	if serr != nil {
+		return nil, serr
+	}
+	if pool == nil {
+		return nil, serror.New(ErrPoolNotFound, map[string]interface{}{"pool-key": pluginKey})
+	}
+	// If the strategy is nil but the pool exists we likely are waiting on the pool to be fully initialized
+	// because of a plugin load/unload event that is currently being processed. Prevents panic from using nil
+	// RoutingAndCaching.
+	if pool.Strategy() == nil {
+		return nil, errors.New("Plugin strategy not set")
+	}
+
+	config := metricTypes[0].Config()
+	cfg := map[string]ctypes.ConfigValue{}
+	if config != nil {
+		cfg = config.Table()
+	}
+
+	pool.RLock()
+	defer pool.RUnlock()
+	p, serr := pool.SelectAP(taskID, cfg)
+	if serr != nil {
+		return nil, serr
+	}
+
+	// cast client to PluginCollectorClient
+	cli, ok := p.(*availablePlugin).client.(client.PluginStreamCollectorClient)
+	if !ok {
+		return nil, serror.New(errors.New("unable to cast client to PluginCollectorClient"))
+	}
+
+	// collect metrics
+	ch, err := cli.StreamMetrics(metricTypes)
+	if err != nil {
+		return nil, serror.New(err)
+	}
+	// update plugin stats
+	p.(*availablePlugin).hitCount++
+	p.(*availablePlugin).lastHitTime = time.Now()
+
+	return ch, nil
+}
 func (ap *availablePlugins) collectMetrics(pluginKey string, metricTypes []core.Metric, taskID string) ([]core.Metric, error) {
 	var results []core.Metric
 	pool, serr := ap.getPool(pluginKey)

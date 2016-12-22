@@ -243,6 +243,7 @@ func (t *task) Spin() {
 
 // Fork stream stuff here
 func (t *task) stream() {
+	fmt.Println("\n\n STARTING STREAM IN SCHEDULER \n\n")
 	// call streammetrics
 	// TODO(CDR): Deal with failure.
 	ch, _ := t.metricsManager.StreamMetrics(t.id, t.workflow.tags)
@@ -252,6 +253,10 @@ func (t *task) stream() {
 			t.state = core.TaskStopped
 			break
 		case mts := <-ch:
+			fmt.Println("\n\n METRICS ", len(mts), " GET YOUR METRICS HERE\n\n")
+			if len(mts) == 0 {
+				continue
+			}
 			t.workflow.StreamStart(t, mts)
 		}
 	}

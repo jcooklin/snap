@@ -910,42 +910,47 @@ func (p *pluginControl) StreamMetrics(id string, allTags map[string]map[string]s
 		return nil, []error{ErrControllerNotStarted}
 	}
 	errs := make([]error, 0)
-	ch := make(chan []core.Metric)
-	go FakeItTillYouMakeIt(ch)
-	/*	plugintoMetricMap, serrs, err := p.subscriptionGroups.Get(id)
-		if err != nil {
-			controlLogger.WithFields(log.Fields{
-				"_block":                "CollectMetrics",
-				"subscription-group-id": id,
-			}).Error(err)
-			errs = append(errs, err)
-			return
+	pluginToMetricMap, serrs, err := p.subscriptionGroups.Get(id)
+	if err != nil {
+		controlLogger.WithFields(log.Fields{
+			"_block":                "StreamMetrics",
+			"subscription-group-id": id,
+		}).Error(err)
+		errs = append(errs, err)
+		return nil, errs
+	}
+	// If We received errors when the requested metrics were last processed
+	// against the metric catalog we need to return them to the caller.
+	if serrs != nil {
+		for _, e := range serrs {
+			errs = append(errs, e)
 		}
-		// If We received errors when the requested metrics were last processed
-		// against the metric catalog we need to return them to the caller.
-		if serrs != nil {
-			for _, e := range serrs {
-				errs = append(errs, e)
-			}
-		}
-		// We only want at most 1 collector plugin so on more we error
-		if len(pluginToMetricMap) > 1 {
-			return nil, append(errs, errors.New("Only able to have 1 streaming collection plugin"))
-		}
+	}
+	// We only want at most 1 collector plugin so on more we error
+	if len(pluginToMetricMap) > 1 {
+		return nil, append(errs, errors.New("Only able to have 1 streaming collection plugin"))
+	}
+	var ch <-chan []core.Metric
 
-		// For each available plugin call available plugin using RPC client and wait for response (goroutines)
-		for pluginKey, pmt := range pluginToMetricMap {
-			// merge global plugin config into the config for the metric
-			for _, mt := range pmt.metricTypes {
-				if mt.Config() != nil {
-					mt.Config().ReverseMergeInPlace(p.Config.Plugins.getPluginConfigDataNode(core.CollectorPluginType, pmt.plugin.Name(), pmt.plugin.Version()))
-				}
+	// For each available plugin call available plugin using RPC client and wait for response (goroutines)
+	for pluginKey, pmt := range pluginToMetricMap {
+		// merge global plugin config into the config for the metric
+		for _, mt := range pmt.metricTypes {
+			if mt.Config() != nil {
+				mt.Config().ReverseMergeInPlace(p.Config.Plugins.getPluginConfigDataNode(core.CollectorPluginType, pmt.plugin.Name(), pmt.plugin.Version()))
 			}
-			go FakeItTillYouMakeIt(ch)
-		}*/
+		}
+		//go FakeItTillYouMakeIt(ch)
+		ch, err = p.pluginRunner.AvailablePlugins().streamMetrics(pluginKey, pmt.metricTypes, id)
+		if err != nil {
+			errs = append(errs, err)
+			return nil, errs
+		}
+	}
 	return ch, errs
 }
 
+/*
 func FakeItTillYouMakeIt(ch chan []core.Metric) {
 	cnt := 0
 	mt := plugin.MetricType{
@@ -959,7 +964,7 @@ func FakeItTillYouMakeIt(ch chan []core.Metric) {
 		mt.Data_ = cnt
 		time.Sleep(time.Second)
 	}
-}
+}*/
 
 // CollectMetrics is a blocking call to collector plugins returning a collection
 // of metrics and errors.  If an error is encountered no metrics will be

@@ -42,6 +42,7 @@ func ToPluginType(name string) (PluginType, error) {
 		"collector": 0,
 		"processor": 1,
 		"publisher": 2,
+		"streamer":  3,
 	}
 	t, ok := pts[name]
 	if !ok {
@@ -55,6 +56,7 @@ func (pt PluginType) String() string {
 		"collector",
 		"processor",
 		"publisher",
+		"streamer",
 	}[pt]
 }
 
