@@ -20,6 +20,15 @@ syntax = "proto3";
 
 package rpc;
 
+service StreamCollector {
+	rpc StreamMetrics(MetricsArg) returns (stream MetricsReply) {}
+	rpc SetConfig(ConfigMap) returns (ErrReply) {}
+	rpc Kill(KillArg) returns (ErrReply) {}
+	rpc GetMetricTypes(GetMetricTypesArg) returns (MetricsReply) {}
+	rpc GetConfigPolicy(Empty) returns (GetConfigPolicyReply) {}
+	rpc Ping(Empty) returns (ErrReply) {}
+}
+
 service Collector {
     rpc CollectMetrics(MetricsArg) returns (MetricsReply) {}
     rpc GetMetricTypes(GetMetricTypesArg) returns (MetricsReply) {}

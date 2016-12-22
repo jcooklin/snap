@@ -497,6 +497,113 @@ func (p *pluginManager) LoadPlugin(details *pluginDetails, emitter gomit.Emitter
 				return nil, serror.New(err)
 			}
 		}
+	} else if resp.Type == plugin.StreamCollectorPluginType {
+		cfgNode := p.pluginConfig.getPluginConfigDataNode(core.PluginType(resp.Type), resp.Meta.Name, resp.Meta.Version)
+
+		if lPlugin.ConfigPolicy != nil {
+			// Get plugin config defaults
+			defaults := cdata.NewNode()
+			for _, cpolicy := range lPlugin.ConfigPolicy.GetAll() {
+				_, errs := cpolicy.AddDefaults(defaults.Table())
+				if len(errs.Errors()) > 0 {
+					for _, err := range errs.Errors() {
+						pmLogger.WithFields(log.Fields{
+							"_block":         "load-plugin",
+							"plugin-type":    "collector",
+							"plugin-name":    ap.Name(),
+							"plugin-version": ap.Version(),
+							"plugin-id":      ap.ID(),
+						}).Error(err.Error())
+					}
+					return nil, serror.New(errors.New("error getting default config"))
+				}
+			}
+
+			// Update config policy with defaults
+			cfgNode = cfgNode.ReverseMerge(defaults)
+			cp, err = c.GetConfigPolicy()
+			if err != nil {
+				pmLogger.WithFields(log.Fields{
+					"_block":         "load-plugin",
+					"plugin-type":    "collector",
+					"error":          err.Error(),
+					"plugin-name":    ap.Name(),
+					"plugin-version": ap.Version(),
+					"plugin-id":      ap.ID(),
+				}).Error("error in getting config policy")
+				return nil, serror.New(err)
+			}
+			lPlugin.ConfigPolicy = cp
+		}
+
+		colClient := ap.client.(client.PluginStreamCollectorClient)
+
+		cfg := plugin.ConfigType{
+			ConfigDataNode: cfgNode,
+		}
+
+		metricTypes, err := colClient.GetMetricTypes(cfg)
+		if err != nil {
+			pmLogger.WithFields(log.Fields{
+				"_block":      "load-plugin",
+				"plugin-type": "collector",
+				"error":       err.Error(),
+			}).Error("error in getting metric types")
+			return nil, serror.New(err)
+		}
+
+		// Add metric types to metric catalog
+		for _, nmt := range metricTypes {
+			// If the version is 0 default it to the plugin version
+			// This honors the plugins explicit version but falls back
+			// to the plugin version as default
+			if nmt.Version() < 1 {
+				// Since we have to override version we convert to a internal struct
+				nmt = &metricType{
+					namespace:          nmt.Namespace(),
+					version:            resp.Meta.Version,
+					lastAdvertisedTime: nmt.LastAdvertisedTime(),
+					config:             nmt.Config(),
+					data:               nmt.Data(),
+					tags:               nmt.Tags(),
+					description:        nmt.Description(),
+					unit:               nmt.Unit(),
+				}
+			}
+			// We quit and throw an error on bad metric versions (<1)
+			// the is a safety catch otherwise the catalog will be corrupted
+			if nmt.Version() < 1 {
+				err := errors.New("Bad metric version from plugin")
+				pmLogger.WithFields(log.Fields{
+					"_block":           "load-plugin",
+					"plugin-name":      resp.Meta.Name,
+					"plugin-version":   resp.Meta.Version,
+					"plugin-type":      resp.Meta.Type.String(),
+					"plugin-path":      filepath.Base(lPlugin.Details.ExecPath),
+					"metric-namespace": nmt.Namespace(),
+					"metric-version":   nmt.Version(),
+					"error":            err.Error(),
+				}).Error("received metric with bad version")
+				return nil, serror.New(err)
+			}
+
+			//Add standard tags
+			nmt = addStandardAndWorkflowTags(nmt, nil)
+
+			if err := p.metricCatalog.AddLoadedMetricType(lPlugin, nmt); err != nil {
+				pmLogger.WithFields(log.Fields{
+					"_block":           "load-plugin",
+					"plugin-name":      resp.Meta.Name,
+					"plugin-version":   resp.Meta.Version,
+					"plugin-type":      resp.Meta.Type.String(),
+					"plugin-path":      filepath.Base(lPlugin.Details.ExecPath),
+					"metric-namespace": nmt.Namespace(),
+					"metric-version":   nmt.Version(),
+					"error":            err.Error(),
+				}).Error("error adding loaded metric type")
+				return nil, serror.New(err)
+			}
+		}
 	}
 
 	// Added so clients can adequately clean up connections

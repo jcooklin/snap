@@ -79,7 +79,7 @@ type availablePlugin struct {
 // newAvailablePlugin returns an availablePlugin with information from a
 // plugin.Response
 func newAvailablePlugin(resp plugin.Response, emitter gomit.Emitter, ep executablePlugin) (*availablePlugin, error) {
-	if resp.Type != plugin.CollectorPluginType && resp.Type != plugin.ProcessorPluginType && resp.Type != plugin.PublisherPluginType {
+	if resp.Type != plugin.CollectorPluginType && resp.Type != plugin.ProcessorPluginType && resp.Type != plugin.PublisherPluginType && resp.Type != plugin.StreamCollectorPluginType {
 		return nil, strategy.ErrBadType
 	}
 	ap := &availablePlugin{
@@ -97,6 +97,17 @@ func newAvailablePlugin(resp plugin.Response, emitter gomit.Emitter, ep executab
 
 	// Create RPC Client
 	switch resp.Type {
+	case plugin.StreamCollectorPluginType:
+		switch resp.Meta.RPCType {
+		case plugin.Stream:
+			c, e := client.NewStreamCollectorClient(resp.ListenAddress, DefaultClientTimeout, resp.PublicKey, !resp.Meta.Unsecure)
+			if e != nil {
+				return nil, errors.New("error while creating client connection: " + e.Error())
+			}
+			ap.client = c
+		default:
+			return nil, errors.New("Invalid RPCTYPE")
+		}
 	case plugin.CollectorPluginType:
 		switch resp.Meta.RPCType {
 		case plugin.NativeRPC:
@@ -112,6 +123,12 @@ func newAvailablePlugin(resp plugin.Response, emitter gomit.Emitter, ep executab
 			ap.client = c
 		case plugin.GRPC:
 			c, e := client.NewCollectorGrpcClient(resp.ListenAddress, DefaultClientTimeout, resp.PublicKey, !resp.Meta.Unsecure)
+			if e != nil {
+				return nil, errors.New("error while creating client connection: " + e.Error())
+			}
+			ap.client = c
+		case plugin.Stream:
+			c, e := client.NewStreamCollectorClient(resp.ListenAddress, DefaultClientTimeout, resp.PublicKey, !resp.Meta.Unsecure)
 			if e != nil {
 				return nil, errors.New("error while creating client connection: " + e.Error())
 			}
@@ -321,7 +338,7 @@ func newAvailablePlugins() *availablePlugins {
 }
 
 func (ap *availablePlugins) insert(pl *availablePlugin) error {
-	if pl.pluginType != plugin.CollectorPluginType && pl.pluginType != plugin.ProcessorPluginType && pl.pluginType != plugin.PublisherPluginType {
+	if pl.pluginType != plugin.CollectorPluginType && pl.pluginType != plugin.ProcessorPluginType && pl.pluginType != plugin.PublisherPluginType && pl.pluginType != plugin.StreamCollectorPluginType {
 		return strategy.ErrBadType
 	}
 

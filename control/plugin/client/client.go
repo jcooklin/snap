@@ -41,6 +41,12 @@ type PluginCollectorClient interface {
 	GetMetricTypes(plugin.ConfigType) ([]core.Metric, error)
 }
 
+type PluginStreamCollectorClient interface {
+	PluginClient
+	StreamMetrics([]core.Metric) (<-chan []core.Metric, error)
+	GetMetricTypes(plugin.ConfigType) ([]core.Metric, error)
+}
+
 // PluginProcessorClient A client providing processor specific plugin method calls.
 type PluginProcessorClient interface {
 	PluginClient

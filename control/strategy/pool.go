@@ -178,7 +178,11 @@ func (p *pool) IncRestartCount() {
 
 // Insert inserts an AvailablePlugin into the pool
 func (p *pool) Insert(a AvailablePlugin) error {
-	if a.Type() != plugin.CollectorPluginType && a.Type() != plugin.ProcessorPluginType && a.Type() != plugin.PublisherPluginType {
+	fmt.Println(a.Type())
+	if a.Type() != plugin.CollectorPluginType &&
+		a.Type() != plugin.ProcessorPluginType &&
+		a.Type() != plugin.PublisherPluginType &&
+		a.Type() != plugin.StreamCollectorPluginType {
 		return ErrBadType
 	}
 	// If an empty pool is created, it does not have

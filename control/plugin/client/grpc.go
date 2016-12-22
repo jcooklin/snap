@@ -53,12 +53,26 @@ type grpcClient struct {
 	collector rpc.CollectorClient
 	processor rpc.ProcessorClient
 	publisher rpc.PublisherClient
+	streamer  rpc.StreamCollectorClient
 	plugin    pluginClient
 
 	pluginType plugin.PluginType
 	timeout    time.Duration
 	conn       *grpc.ClientConn
 	encrypter  *encrypter.Encrypter
+}
+
+func NewStreamCollectorClient(address string, timeout time.Duration, pub *rsa.PublicKey, secure bool) (PluginCollectorClient, error) {
+	address, port, err := parseAddress(address)
+	if err != nil {
+		return nil, err
+	}
+	p, err := newGrpcClient(address, int(port), timeout, plugin.StreamCollectorPluginType)
+	if err != nil {
+		return nil, err
+	}
+
+	return p, nil
 }
 
 // NewCollectorGrpcClient returns a collector gRPC Client.
@@ -154,6 +168,9 @@ func newGrpcClient(addr string, port int, timeout time.Duration, typ plugin.Plug
 	case plugin.PublisherPluginType:
 		p.publisher = rpc.NewPublisherClient(conn)
 		p.plugin = p.publisher
+	case plugin.StreamCollectorPluginType:
+		p.streamer = rpc.NewStreamCollectorClient(conn)
+		p.plugin = p.streamer
 	default:
 		return nil, errors.New(fmt.Sprintf("Invalid plugin type provided %v", typ))
 	}
@@ -238,12 +255,42 @@ func (g *grpcClient) CollectMetrics(mts []core.Metric) ([]core.Metric, error) {
 	return metrics, nil
 }
 
+func (g *grpcClient) StreamMetrics(mts []core.Metric) (<-chan []core.Metric, error) {
+	arg := &rpc.MetricsArg{
+		Metrics: NewMetrics(mts),
+	}
+	s, err := g.streamer.StreamMetrics(getContext(g.timeout), arg)
+	if err != nil {
+		return nil, err
+	}
+	ch := make(chan []core.Metric)
+	go stream(s, ch)
+	return ch, nil
+}
+func stream(stream rpc.StreamCollector_StreamMetricsClient, ch chan []core.Metric) {
+	for {
+		in, err := stream.Recv()
+		// TODO(CDR): HANDLE EOF separately and logresults
+		if err != nil {
+			close(ch)
+			break
+		}
+		mts := ToCoreMetrics(in.Metrics)
+		ch <- mts
+	}
+}
+
 func (g *grpcClient) GetMetricTypes(config plugin.ConfigType) ([]core.Metric, error) {
 	arg := &rpc.GetMetricTypesArg{
 		Config: ToConfigMap(config.Table()),
 	}
-	reply, err := g.collector.GetMetricTypes(getContext(g.timeout), arg)
-
+	var reply *rpc.MetricsReply
+	var err error
+	if g.streamer != nil {
+		reply, err = g.streamer.GetMetricTypes(getContext(g.timeout), arg)
+	} else {
+		reply, err = g.collector.GetMetricTypes(getContext(g.timeout), arg)
+	}
 	if err != nil {
 		return nil, err
 	}
