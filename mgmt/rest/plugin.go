@@ -39,6 +39,8 @@ import (
 	log "github.com/Sirupsen/logrus"
 	"github.com/julienschmidt/httprouter"
 
+	"encoding/json"
+
 	"github.com/intelsdi-x/snap/core"
 	"github.com/intelsdi-x/snap/core/serror"
 	"github.com/intelsdi-x/snap/mgmt/rest/rbody"
@@ -70,6 +72,8 @@ func (p *plugin) TypeName() string {
 }
 
 func (s *Server) loadPlugin(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	lp := &rbody.PluginsLoaded{}
+	lp.LoadedPlugins = make([]rbody.LoadedPlugin, 0)
 	mediaType, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if err != nil {
 		respond(500, rbody.FromError(err), w)
@@ -79,8 +83,6 @@ func (s *Server) loadPlugin(w http.ResponseWriter, r *http.Request, _ httprouter
 		var pluginPath string
 		var signature []byte
 		var checkSum [sha256.Size]byte
-		lp := &rbody.PluginsLoaded{}
-		lp.LoadedPlugins = make([]rbody.LoadedPlugin, 0)
 		mr := multipart.NewReader(r.Body, params["boundary"])
 		var i int
 		for {
@@ -180,6 +182,27 @@ func (s *Server) loadPlugin(w http.ResponseWriter, r *http.Request, _ httprouter
 				ec = 500
 			}
 			respond(ec, rb, w)
+			return
+		}
+		lp.LoadedPlugins = append(lp.LoadedPlugins, *catalogedPluginToLoaded(r.Host, pl))
+		respond(201, lp, w)
+	} else if strings.HasSuffix(mediaType, "json") {
+		body, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			respond(500, rbody.FromError(err), w)
+			return
+		}
+		var resp map[string]string
+		err = json.Unmarshal(body, &resp)
+		rp, err := core.NewRequestedPlugin(resp["uri"])
+		if err != nil {
+			respond(500, rbody.FromError(err), w)
+			return
+		}
+		pl, err := s.mm.Load(rp)
+		if err != nil {
+			// TODO (JC) should return 409 if plugin already loaded
+			respond(500, rbody.FromError(err), w)
 			return
 		}
 		lp.LoadedPlugins = append(lp.LoadedPlugins, *catalogedPluginToLoaded(r.Host, pl))
