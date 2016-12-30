@@ -29,6 +29,8 @@ import (
 	"strconv"
 	"time"
 
+	"net/url"
+
 	"github.com/intelsdi-x/snap/control/plugin/cpolicy"
 	"github.com/intelsdi-x/snap/core/cdata"
 	"github.com/intelsdi-x/snap/pkg/fileutils"
@@ -129,12 +131,17 @@ type RequestedPlugin struct {
 	keyPath     string
 	caCertPaths string
 	tlsEnabled  bool
+	autoLoaded  bool
+	uri         *url.URL
 }
 
 // NewRequestedPlugin returns a Requested Plugin which represents the plugin path and signature
 // It takes the full path of the plugin (path), temp path (fileName), and content of the file (b) and returns a requested plugin and error
 // The argument b (content of the file) can be nil
 func NewRequestedPlugin(path, fileName string, b []byte) (*RequestedPlugin, error) {
+	if uri, err := url.ParseRequestURI(path); err == nil && uri != nil {
+		return &RequestedPlugin{uri: uri}, nil
+	}
 	var rp *RequestedPlugin
 	// this case is for the snaptel cli as b is unknown and needs to be read
 	if b == nil {
@@ -183,6 +190,10 @@ func NewRequestedPlugin(path, fileName string, b []byte) (*RequestedPlugin, erro
 		}
 	}
 	return rp, nil
+}
+
+func (p *RequestedPlugin) Uri() *url.URL {
+	return p.uri
 }
 
 func (p *RequestedPlugin) Path() string {
