@@ -25,6 +25,8 @@ import (
 	"io/ioutil"
 	"time"
 
+	"net/url"
+
 	"github.com/intelsdi-x/snap/control/plugin/cpolicy"
 	"github.com/intelsdi-x/snap/core/cdata"
 )
@@ -101,9 +103,13 @@ type RequestedPlugin struct {
 	checkSum   [sha256.Size]byte
 	signature  []byte
 	autoLoaded bool
+	uri        *url.URL
 }
 
 func NewRequestedPlugin(path string) (*RequestedPlugin, error) {
+	if uri, err := url.ParseRequestURI(path); err == nil && uri != nil {
+		return &RequestedPlugin{uri: uri}, nil
+	}
 	rp := &RequestedPlugin{
 		path:       path,
 		signature:  nil,
@@ -114,6 +120,10 @@ func NewRequestedPlugin(path string) (*RequestedPlugin, error) {
 		return nil, err
 	}
 	return rp, nil
+}
+
+func (p *RequestedPlugin) Uri() *url.URL {
+	return p.uri
 }
 
 func (p *RequestedPlugin) Path() string {
