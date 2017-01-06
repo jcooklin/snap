@@ -271,8 +271,10 @@ func stream(stream rpc.StreamCollector_StreamMetricsClient, ch chan []core.Metri
 	for {
 		in, err := stream.Recv()
 		fmt.Println("Metrics received in client!")
+
 		// TODO(CDR): HANDLE EOF separately and logresults
 		if err != nil {
+			fmt.Println("\n\n Closing client channel because stream is closed \n\n")
 			close(ch)
 			break
 		}

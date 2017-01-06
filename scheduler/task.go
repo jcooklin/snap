@@ -252,7 +252,11 @@ func (t *task) stream() {
 		case <-t.killChan:
 			t.state = core.TaskStopped
 			break
-		case mts := <-ch:
+		case mts, ok := <-ch:
+			if !ok {
+				ch = nil
+				break
+			}
 			fmt.Println("\n\n METRICS ", len(mts), " GET YOUR METRICS HERE\n\n")
 			if len(mts) == 0 {
 				continue
