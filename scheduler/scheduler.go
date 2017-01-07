@@ -295,6 +295,7 @@ func (s *scheduler) createTask(sch schedule.Schedule, wfMap *wmap.WorkflowMap, s
 		"source":          source,
 		"start-on-create": startOnCreate,
 	})
+	logger.Debug("CREATING A TASK")
 	// Create a container for task errors
 	te := &taskErrors{
 		errs: make([]serror.SnapError, 0),

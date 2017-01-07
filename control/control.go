@@ -560,7 +560,8 @@ func (p *pluginControl) verifySignature(rp *core.RequestedPlugin) (bool, serror.
 }
 
 func (p *pluginControl) returnPluginDetails(rp *core.RequestedPlugin) (*pluginDetails, serror.SnapError) {
-	if rp.Uri() != nil {
+	if rp.Uri() != nil && strings.HasPrefix(rp.Uri().String(), "http") {
+		fmt.Println("HAS HTTP control.returnPluginDetails")
 		return &pluginDetails{
 			Uri:          rp.Uri(),
 			IsAutoLoaded: true,

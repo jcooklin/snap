@@ -309,7 +309,8 @@ func (p *pluginManager) LoadPlugin(details *pluginDetails, emitter gomit.Emitter
 	}).Info("plugin load called")
 	var ePlugin *plugin.ExecutablePlugin
 	var resp plugin.Response
-	if lPlugin.Details.Uri == nil {
+	// TODO(CDR) REMOVE HACKY SHIT
+	if lPlugin.Details.Uri == nil || string(lPlugin.Details.Uri.String()[0]) == "/" {
 		// We will create commands by appending the ExecPath to the actual command.
 		// The ExecPath is a temporary location where the plugin/package will be
 		// run from.
@@ -352,6 +353,7 @@ func (p *pluginManager) LoadPlugin(details *pluginDetails, emitter gomit.Emitter
 			})
 		}
 	} else {
+		fmt.Println("\n\n", lPlugin.Details.Uri.String(), "\n\n\n")
 		res, err := http.Get(lPlugin.Details.Uri.String())
 		if err != nil {
 			return nil, serror.New(err)

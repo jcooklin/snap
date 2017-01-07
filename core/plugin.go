@@ -107,9 +107,13 @@ type RequestedPlugin struct {
 }
 
 func NewRequestedPlugin(path string) (*RequestedPlugin, error) {
-	if uri, err := url.ParseRequestURI(path); err == nil && uri != nil {
-		return &RequestedPlugin{uri: uri}, nil
+	if string(path[0]) != "/" {
+		fmt.Println("GOT HERE?")
+		if uri, err := url.ParseRequestURI(path); err == nil && uri != nil {
+			return &RequestedPlugin{uri: uri}, nil
+		}
 	}
+	fmt.Println("\n\n\n PATH: ", path)
 	rp := &RequestedPlugin{
 		path:       path,
 		signature:  nil,
