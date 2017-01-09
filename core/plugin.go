@@ -27,6 +27,8 @@ import (
 
 	"net/url"
 
+	"strings"
+
 	"github.com/intelsdi-x/snap/control/plugin/cpolicy"
 	"github.com/intelsdi-x/snap/core/cdata"
 )
@@ -107,13 +109,16 @@ type RequestedPlugin struct {
 }
 
 func NewRequestedPlugin(path string) (*RequestedPlugin, error) {
-	if string(path[0]) != "/" {
-		fmt.Println("GOT HERE?")
-		if uri, err := url.ParseRequestURI(path); err == nil && uri != nil {
-			return &RequestedPlugin{uri: uri}, nil
+	if strings.HasPrefix(path, "http") {
+		uri, err := url.ParseRequestURI(path)
+		if err != nil {
+			return nil, err
 		}
+		return &RequestedPlugin{
+			uri:      uri,
+			checkSum: sha256.Sum256([]byte(path)),
+		}, nil
 	}
-	fmt.Println("\n\n\n PATH: ", path)
 	rp := &RequestedPlugin{
 		path:       path,
 		signature:  nil,
