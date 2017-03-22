@@ -293,6 +293,9 @@ func TestCreateTask(t *testing.T) {
 				case <-lse.Ended:
 				case <-time.After(time.Duration(int64(count)*interval.Nanoseconds()) + 1*time.Second):
 				}
+
+				// check if the task is ended
+				So(tsk.State(), ShouldEqual, core.TaskEnded)
 			})
 		})
 		Convey("Single run task firing on defined start time", func() {
@@ -313,6 +316,7 @@ func TestCreateTask(t *testing.T) {
 				case <-lse.Ended:
 				case <-time.After(time.Duration(int64(count)*interval.Nanoseconds()) + 1*time.Second):
 				}
+
 				// check if the task is ended
 				So(tsk.State(), ShouldEqual, core.TaskEnded)
 			})
@@ -518,7 +522,7 @@ func TestStartTask(t *testing.T) {
 		}
 
 		// check if the task is ended
-		// So(tsk.State(), ShouldEqual, core.TaskEnded)
+		So(tsk.State(), ShouldEqual, core.TaskEnded)
 
 		// try to restart the ended windowed task for which the stop time is in the past
 		err := s.StartTask(tsk.ID())
@@ -617,7 +621,7 @@ func TestEnableTask(t *testing.T) {
 		}
 
 		// check if the task is ended
-		// So(tsk.State(), ShouldEqual, core.TaskEnded)
+		So(tsk.State(), ShouldEqual, core.TaskEnded)
 
 		// try to enable the ended task
 		_, err := s.EnableTask(tsk.ID())
