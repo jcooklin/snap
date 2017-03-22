@@ -364,7 +364,9 @@ func TestDistributedSubscriptions(t *testing.T) {
 					// wait for the end of determined window
 					time.Sleep(startWait + windowSize)
 					// wait an interval to be sure that the task state has been updated
-					time.Sleep(interval)
+					// we are ok at this precision with being within 10% over the interval (10ms)
+					time.Sleep(interval * 110 / 100)
+
 					// check if the task has ended
 					So(t.State(), ShouldEqual, core.TaskEnded)
 
