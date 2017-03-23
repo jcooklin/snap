@@ -263,8 +263,8 @@ func TestCreateTask(t *testing.T) {
 				// wait for the end of determined window
 				time.Sleep(startWait + windowSize)
 				// wait an interval to be sure that the task state has been updated
-				// we are ok at this precision with being within 10% over the interval (10ms)
-				time.Sleep(interval * 110 / 100)
+				// we are ok to extend sleeping by 100ms to allow to complete post-schedule activities
+				time.Sleep(interval + time.Millisecond*100)
 				// check if the task is ended
 				So(tsk.State(), ShouldEqual, core.TaskEnded)
 			})
@@ -283,8 +283,8 @@ func TestCreateTask(t *testing.T) {
 
 			Convey("the task should be ended after reaching the end of window", func() {
 				// wait an interval to be sure that the task state has been updated
-				// we are ok at this precision with being within 10% over the interval (10ms)
-				time.Sleep(interval * 110 / 100)
+				// we are ok to extend sleeping by 100ms to allow to complete post-schedule activities
+				time.Sleep(interval + time.Millisecond*100)
 				// check if the task is ended
 				So(tsk.State(), ShouldEqual, core.TaskEnded)
 			})
@@ -303,8 +303,8 @@ func TestCreateTask(t *testing.T) {
 				// wait for the end of determined window
 				time.Sleep(startWait)
 				// wait an interval to be sure that the task state has been updated
-				// we are ok at this precision with being within 10% over the interval (10ms)
-				time.Sleep(interval * 110 / 100)
+				// we are ok to extend sleeping by 100ms to allow to complete post-schedule activities
+				time.Sleep(interval + time.Millisecond*100)
 				// check if the task is ended
 				So(tsk.State(), ShouldEqual, core.TaskEnded)
 			})
@@ -415,9 +415,8 @@ func TestStopTask(t *testing.T) {
 		// wait for the end of determined window
 		time.Sleep(startWait + windowSize)
 		// wait an interval to be sure that the task state has been updated
-		// we are ok at this precision with being within 10% over the interval (10ms)
-		time.Sleep(interval * 110 / 100)
-
+		// we are ok to extend sleeping by 100ms to allow to complete post-schedule activities
+		time.Sleep(interval + time.Millisecond*100)
 		// check if the task is ended
 		So(tsk.State(), ShouldEqual, core.TaskEnded)
 
@@ -502,8 +501,8 @@ func TestStartTask(t *testing.T) {
 		// wait for the end of determined window
 		time.Sleep(startWait + windowSize)
 		// wait an interval to be sure that the task state has been updated
-		// we are ok at this precision with being within 10% over the interval (10ms)
-		time.Sleep(interval * 110 / 100)
+		// we are ok to extend sleeping by 100ms to allow to complete post-schedule activities
+		time.Sleep(interval + time.Millisecond*100)
 
 		// check if the task is ended
 		So(tsk.State(), ShouldEqual, core.TaskEnded)
@@ -599,8 +598,8 @@ func TestEnableTask(t *testing.T) {
 		// wait for the end of determined window
 		time.Sleep(startWait + windowSize)
 		// wait an interval to be sure that the task state has been updated
-		// we are ok at this precision with being within 10% over the interval (10ms)
-		time.Sleep(interval * 110 / 100)
+		/// we are ok to extend sleeping by 100ms to allow to complete post-schedule activities
+		time.Sleep(interval + time.Millisecond*100)
 
 		// check if the task is ended
 		So(tsk.State(), ShouldEqual, core.TaskEnded)
