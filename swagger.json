@@ -997,6 +997,11 @@
         "interval"
       ],
       "properties": {
+        "count": {
+          "type": "integer",
+          "format": "uint64",
+          "x-go-name": "Count"
+        },
         "interval": {
           "type": "string",
           "x-go-name": "Interval"
