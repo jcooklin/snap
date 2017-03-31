@@ -213,7 +213,7 @@ func getPluginType(t string) (core.PluginType, error) {
 }
 
 // deletePluginConfigItemHelper builds different forms of request data into the way method deletePluginConfigItem accepts.
-// currently it accepts go-swagger client, swagger-ui curl, and SnapCLI.
+// currently it accepts go-swagger client, swagger-ui, curl, and SnapCLI.
 func deletePluginConfigItemHelper(r *http.Request) ([]string, error) {
 	buf, err := ioutil.ReadAll(r.Body)
 	if err != nil {

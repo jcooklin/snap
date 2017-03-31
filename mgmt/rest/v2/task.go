@@ -303,7 +303,6 @@ func addTaskHelper(r *http.Request) error {
 		return err
 	}
 	defer r.Body.Close()
-
 	r.Body = ioutil.NopCloser(bytes.NewBuffer(buf))
 
 	dm := map[string]string{}
