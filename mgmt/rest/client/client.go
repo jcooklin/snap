@@ -263,7 +263,6 @@ func (c *Client) do(method, path string, ct contentType, body ...[]byte) (*rbody
 		}
 		defer rsp.Body.Close()
 	}
-
 	return httpRespToAPIResp(rsp)
 }
 
