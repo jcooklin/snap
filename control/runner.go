@@ -66,18 +66,20 @@ type executablePlugin interface {
 
 // Handles events pertaining to plugins and control the runnning state accordingly.
 type runner struct {
-	delegates        []gomit.Delegator
-	emitter          gomit.Emitter
-	monitor          *monitor
-	availablePlugins *availablePlugins
-	metricCatalog    catalogsMetrics
-	pluginManager    managesPlugins
+	delegates         []gomit.Delegator
+	emitter           gomit.Emitter
+	monitor           *monitor
+	availablePlugins  *availablePlugins
+	metricCatalog     catalogsMetrics
+	pluginManager     managesPlugins
+	pluginLoadTimeout int
 }
 
 func newRunner() *runner {
 	r := &runner{
-		monitor:          newMonitor(),
-		availablePlugins: newAvailablePlugins(),
+		pluginLoadTimeout: defaultPluginLoadTimeout,
+		monitor:           newMonitor(),
+		availablePlugins:  newAvailablePlugins(),
 	}
 	return r
 }
@@ -100,6 +102,11 @@ func (r *runner) AvailablePlugins() *availablePlugins {
 
 func (r *runner) Monitor() *monitor {
 	return r.monitor
+}
+
+// SetPluginLoadTimeout sets plugin load timeout
+func (r *runner) SetPluginLoadTimeout(timeout int) {
+	r.pluginLoadTimeout = timeout
 }
 
 // Adds Delegates (gomit.Delegator) for adding Runner handlers to on Start and
@@ -156,7 +163,7 @@ func (r *runner) Stop() []error {
 }
 
 func (r *runner) startPlugin(p executablePlugin) (*availablePlugin, error) {
-	resp, err := p.Run(time.Second * 5)
+	resp, err := p.Run(time.Second * time.Duration(r.pluginLoadTimeout))
 	if err != nil {
 		e := errors.New("error starting plugin: " + err.Error())
 		runnerLog.WithFields(log.Fields{

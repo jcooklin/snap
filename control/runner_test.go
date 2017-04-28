@@ -473,6 +473,18 @@ func TestRunnerPluginRunning(t *testing.T) {
 						So(ap, ShouldBeNil)
 						So(e, ShouldResemble, errors.New("error starting plugin: timeout"))
 					})
+
+					Convey("execution time of startPlugin should exceed timeout value", func() {
+						r := newRunner()
+						r.SetEmitter(new(MockEmitter))
+						r.SetPluginLoadTimeout(10)
+						exPlugin := new(MockExecutablePlugin)
+						startTime := time.Now()
+						ap, _ := r.startPlugin(exPlugin)
+						So(ap, ShouldBeNil)
+						So(time.Since(startTime), ShouldBeGreaterThan, r.pluginLoadTimeout)
+					})
+
 				}
 			})
 
