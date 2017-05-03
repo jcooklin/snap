@@ -163,6 +163,7 @@ func (l *loadedPlugins) findLatest(typeName, name string) (*loadedPlugin, error)
 
 // the struct representing a plugin that is loaded into snap
 type pluginDetails struct {
+<<<<<<< HEAD
 	CheckSum     [sha256.Size]byte
 	Exec         []string
 	ExecPath     string
@@ -177,6 +178,17 @@ type pluginDetails struct {
 	CACertPaths  string
 	TLSEnabled   bool
 	Uri          *url.URL
+=======
+	CheckSum  [sha256.Size]byte
+	Exec      []string
+	ExecPath  string
+	IsPackage bool
+	Manifest  *schema.ImageManifest
+	Path      string
+	Signed    bool
+	Signature []byte
+	Uri       *url.URL
+>>>>>>> Added additional error handling; added check for remote AvailablePlugin
 }
 
 type loadedPlugin struct {
@@ -349,7 +361,6 @@ func (p *pluginManager) LoadPlugin(details *pluginDetails, emitter gomit.Emitter
 	lPlugin.Details = details
 	lPlugin.State = DetectedState
 
-	//TODO (JC) deal with path
 	var (
 		ePlugin *plugin.ExecutablePlugin
 		resp    plugin.Response
@@ -408,8 +419,8 @@ func (p *pluginManager) LoadPlugin(details *pluginDetails, emitter gomit.Emitter
 		}
 	} else {
 		pmLogger.WithFields(log.Fields{
-			"_block": "load-plugin",
-			"path":   lPlugin.Details.Uri.String(),
+			"_block":     "load-plugin",
+			"plugin-uri": lPlugin.Details.Uri.String(),
 		}).Info("plugin load called")
 
 		res, err := http.Get(lPlugin.Details.Uri.String())
@@ -421,7 +432,13 @@ func (p *pluginManager) LoadPlugin(details *pluginDetails, emitter gomit.Emitter
 		if err != nil {
 			return nil, serror.New(err)
 		}
-		json.Unmarshal(body, &resp)
+		err = json.Unmarshal(body, &resp)
+		if err != nil {
+			pmLogger.WithFields(log.Fields{
+				"_block": "load-plugin",
+				"error":  err.Error(),
+			}).Error("error during json unmarshal")
+		}
 	}
 	ap, err := newAvailablePlugin(resp, emitter, ePlugin, p.grpcSecurity)
 	if err != nil {
@@ -430,6 +447,10 @@ func (p *pluginManager) LoadPlugin(details *pluginDetails, emitter gomit.Emitter
 			"error":  err.Error(),
 		}).Error("load plugin error while creating available plugin")
 		return nil, serror.New(err)
+	}
+
+	if lPlugin.Details.Uri != nil {
+		ap.SetIsRemote(true)
 	}
 
 	if resp.Meta.Unsecure {
