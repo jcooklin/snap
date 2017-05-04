@@ -317,246 +317,283 @@ func (p *pluginManager) SetMetricCatalog(mc catalogsMetrics) {
 // LoadPlugin is the method for loading a plugin and
 // saving plugin into the LoadedPlugins array
 func (p *pluginManager) LoadPlugin(details *pluginDetails, emitter gomit.Emitter) (*loadedPlugin, serror.SnapError) {
-	lPlugin := new(loadedPlugin)
-	lPlugin.Details = details
-	lPlugin.State = DetectedState
+	resultChan := make(chan struct {
+		lp  *loadedPlugin
+		err serror.SnapError
+	})
+	go func() {
+		lPlugin := new(loadedPlugin)
+		lPlugin.Details = details
+		lPlugin.State = DetectedState
 
-	pmLogger.WithFields(log.Fields{
-		"_block": "load-plugin",
-		"path":   filepath.Base(lPlugin.Details.Exec[0]),
-	}).Info("plugin load called")
-
-	// We will create commands by appending the ExecPath to the actual command.
-	// The ExecPath is a temporary location where the plugin/package will be
-	// run from.
-	commands := make([]string, len(lPlugin.Details.Exec))
-	for i, e := range lPlugin.Details.Exec {
-		commands[i] = filepath.Join(lPlugin.Details.ExecPath, e)
-	}
-
-	ePlugin, err := plugin.NewExecutablePlugin(
-		p.GenerateArgs(int(log.GetLevel())),
-		commands...)
-	if err != nil {
 		pmLogger.WithFields(log.Fields{
 			"_block": "load-plugin",
-			"error":  err.Error(),
-		}).Error("load plugin error while creating executable plugin")
-		return nil, serror.New(err)
-	}
+			"path":   filepath.Base(lPlugin.Details.Exec[0]),
+		}).Info("plugin load called")
 
-	pmLogger.WithFields(log.Fields{
-		"_block": "load-plugin",
-		"path":   lPlugin.Details.Exec,
-	}).Debug(fmt.Sprintf("plugin load timeout set to %ds", p.pluginLoadTimeout))
-	resp, err := ePlugin.Run(time.Second * time.Duration(p.pluginLoadTimeout))
-	if err != nil {
-		pmLogger.WithFields(log.Fields{
-			"_block": "load-plugin",
-			"error":  err.Error(),
-		}).Error("load plugin error when starting plugin")
-		return nil, serror.New(err)
-	}
-
-	ePlugin.SetName(resp.Meta.Name)
-
-	key := fmt.Sprintf("%s"+core.Separator+"%s"+core.Separator+"%d", resp.Meta.Type.String(), resp.Meta.Name, resp.Meta.Version)
-	if _, exists := p.loadedPlugins.table[key]; exists {
-		return nil, serror.New(ErrPluginAlreadyLoaded, map[string]interface{}{
-			"plugin-name":    resp.Meta.Name,
-			"plugin-version": resp.Meta.Version,
-			"plugin-type":    resp.Type.String(),
-		})
-	}
-
-	ap, err := newAvailablePlugin(resp, emitter, ePlugin)
-	if err != nil {
-		pmLogger.WithFields(log.Fields{
-			"_block": "load-plugin",
-			"error":  err.Error(),
-		}).Error("load plugin error while creating available plugin")
-		return nil, serror.New(err)
-	}
-
-	if resp.Meta.Unsecure {
-		err = ap.client.Ping()
-	} else {
-		err = ap.client.SetKey()
-	}
-
-	if err != nil {
-		pmLogger.WithFields(log.Fields{
-			"_block": "load-plugin",
-			"error":  err.Error(),
-		}).Error("load plugin error while pinging the plugin")
-		return nil, serror.New(err)
-	}
-
-	// Get the ConfigPolicy and add it to the loaded plugin
-	c, ok := ap.client.(plugin.Plugin)
-	if !ok {
-		return nil, serror.New(errors.New("missing GetConfigPolicy function"))
-	}
-	cp, err := c.GetConfigPolicy()
-	if err != nil {
-		pmLogger.WithFields(log.Fields{
-			"_block":         "load-plugin",
-			"plugin-type":    "collector",
-			"error":          err.Error(),
-			"plugin-name":    ap.Name(),
-			"plugin-version": ap.Version(),
-			"plugin-id":      ap.ID(),
-		}).Error("error in getting config policy")
-		return nil, serror.New(err)
-	}
-
-	lPlugin.ConfigPolicy = cp
-	lPlugin.Meta = resp.Meta
-	lPlugin.Type = resp.Type
-	lPlugin.Token = resp.Token
-	lPlugin.LoadedTime = time.Now()
-	lPlugin.State = LoadedState
-
-	if resp.Type == plugin.CollectorPluginType {
-		cfgNode := p.pluginConfig.getPluginConfigDataNode(core.PluginType(resp.Type), resp.Meta.Name, resp.Meta.Version)
-
-		if lPlugin.ConfigPolicy != nil {
-			// Get plugin config defaults
-			defaults := cdata.NewNode()
-			for _, cpolicy := range lPlugin.ConfigPolicy.GetAll() {
-				_, errs := cpolicy.AddDefaults(defaults.Table())
-				if len(errs.Errors()) > 0 {
-					for _, err := range errs.Errors() {
-						pmLogger.WithFields(log.Fields{
-							"_block":         "load-plugin",
-							"plugin-type":    "collector",
-							"plugin-name":    ap.Name(),
-							"plugin-version": ap.Version(),
-							"plugin-id":      ap.ID(),
-						}).Error(err.Error())
-					}
-					return nil, serror.New(errors.New("error getting default config"))
-				}
-			}
-
-			// Update config policy with defaults
-			cfgNode = cfgNode.ReverseMerge(defaults)
-			cp, err = c.GetConfigPolicy()
-			if err != nil {
-				pmLogger.WithFields(log.Fields{
-					"_block":         "load-plugin",
-					"plugin-type":    "collector",
-					"error":          err.Error(),
-					"plugin-name":    ap.Name(),
-					"plugin-version": ap.Version(),
-					"plugin-id":      ap.ID(),
-				}).Error("error in getting config policy")
-				return nil, serror.New(err)
-			}
-			lPlugin.ConfigPolicy = cp
+		// We will create commands by appending the ExecPath to the actual command.
+		// The ExecPath is a temporary location where the plugin/package will be
+		// run from.
+		commands := make([]string, len(lPlugin.Details.Exec))
+		for i, e := range lPlugin.Details.Exec {
+			commands[i] = filepath.Join(lPlugin.Details.ExecPath, e)
 		}
 
-		colClient := ap.client.(client.PluginCollectorClient)
-
-		cfg := plugin.ConfigType{
-			ConfigDataNode: cfgNode,
-		}
-
-		metricTypes, err := colClient.GetMetricTypes(cfg)
+		ePlugin, err := plugin.NewExecutablePlugin(
+			p.GenerateArgs(int(log.GetLevel())),
+			commands...)
 		if err != nil {
 			pmLogger.WithFields(log.Fields{
-				"_block":      "load-plugin",
-				"plugin-type": "collector",
-				"error":       err.Error(),
-			}).Error("error in getting metric types")
-			return nil, serror.New(err)
+				"_block": "load-plugin",
+				"error":  err.Error(),
+			}).Error("load plugin error while creating executable plugin")
+			// return nil, serror.New(err)
+			resultChan <- result{nil, serror.New(err)}
 		}
 
-		// Add metric types to metric catalog
-		for _, nmt := range metricTypes {
-			// If the version is 0 default it to the plugin version
-			// This honors the plugins explicit version but falls back
-			// to the plugin version as default
-			if nmt.Version() < 1 {
-				// Since we have to override version we convert to a internal struct
-				nmt = &metricType{
-					namespace:          nmt.Namespace(),
-					version:            resp.Meta.Version,
-					lastAdvertisedTime: nmt.LastAdvertisedTime(),
-					config:             nmt.Config(),
-					data:               nmt.Data(),
-					tags:               nmt.Tags(),
-					description:        nmt.Description(),
-					unit:               nmt.Unit(),
+		pmLogger.WithFields(log.Fields{
+			"_block": "load-plugin",
+			"path":   lPlugin.Details.Exec,
+		}).Debug(fmt.Sprintf("plugin load timeout set to %ds", p.pluginLoadTimeout))
+		resp, err := ePlugin.Run(time.Second * time.Duration(p.pluginLoadTimeout))
+		if err != nil {
+			pmLogger.WithFields(log.Fields{
+				"_block": "load-plugin",
+				"error":  err.Error(),
+			}).Error("load plugin error when starting plugin")
+			// return nil, serror.New(err)
+			resultChan <- result{nil, serror.New(err)}
+		}
+
+		ePlugin.SetName(resp.Meta.Name)
+
+		key := fmt.Sprintf("%s"+core.Separator+"%s"+core.Separator+"%d", resp.Meta.Type.String(), resp.Meta.Name, resp.Meta.Version)
+		if _, exists := p.loadedPlugins.table[key]; exists {
+			// return nil, serror.New(ErrPluginAlreadyLoaded, map[string]interface{}{
+			// 	"plugin-name":    resp.Meta.Name,
+			// 	"plugin-version": resp.Meta.Version,
+			// 	"plugin-type":    resp.Type.String(),
+			// })
+			resultChan <- result{nil, serror.New(ErrPluginAlreadyLoaded, map[string]interface{}{
+				"plugin-name":    resp.Meta.Name,
+				"plugin-version": resp.Meta.Version,
+				"plugin-type":    resp.Type.String(),
+			})}
+		}
+
+		ap, err := newAvailablePlugin(resp, emitter, ePlugin)
+		if err != nil {
+			pmLogger.WithFields(log.Fields{
+				"_block": "load-plugin",
+				"error":  err.Error(),
+			}).Error("load plugin error while creating available plugin")
+			// return nil, serror.New(err)
+			resultChan <- result{nil, serror.New(err)}
+		}
+
+		if resp.Meta.Unsecure {
+			err = ap.client.Ping()
+		} else {
+			err = ap.client.SetKey()
+		}
+
+		if err != nil {
+			pmLogger.WithFields(log.Fields{
+				"_block": "load-plugin",
+				"error":  err.Error(),
+			}).Error("load plugin error while pinging the plugin")
+			// return nil, serror.New(err)
+			resultChan <- result{nil, serror.New(err)}
+		}
+
+		// Get the ConfigPolicy and add it to the loaded plugin
+		c, ok := ap.client.(plugin.Plugin)
+		if !ok {
+			// return nil, serror.New(errors.New("missing GetConfigPolicy function"))
+			resultChan <- result{nil, serror.New(errors.New("missing GetConfigPolicy function"))}
+		}
+		cp, err := c.GetConfigPolicy()
+		if err != nil {
+			pmLogger.WithFields(log.Fields{
+				"_block":         "load-plugin",
+				"plugin-type":    "collector",
+				"error":          err.Error(),
+				"plugin-name":    ap.Name(),
+				"plugin-version": ap.Version(),
+				"plugin-id":      ap.ID(),
+			}).Error("error in getting config policy")
+			// return nil, serror.New(err)
+			resultChan <- result{nil, serror.New(err)}
+		}
+
+		lPlugin.ConfigPolicy = cp
+		lPlugin.Meta = resp.Meta
+		lPlugin.Type = resp.Type
+		lPlugin.Token = resp.Token
+		lPlugin.LoadedTime = time.Now()
+		lPlugin.State = LoadedState
+
+		if resp.Type == plugin.CollectorPluginType {
+			cfgNode := p.pluginConfig.getPluginConfigDataNode(core.PluginType(resp.Type), resp.Meta.Name, resp.Meta.Version)
+
+			if lPlugin.ConfigPolicy != nil {
+				// Get plugin config defaults
+				defaults := cdata.NewNode()
+				for _, cpolicy := range lPlugin.ConfigPolicy.GetAll() {
+					_, errs := cpolicy.AddDefaults(defaults.Table())
+					if len(errs.Errors()) > 0 {
+						for _, err := range errs.Errors() {
+							pmLogger.WithFields(log.Fields{
+								"_block":         "load-plugin",
+								"plugin-type":    "collector",
+								"plugin-name":    ap.Name(),
+								"plugin-version": ap.Version(),
+								"plugin-id":      ap.ID(),
+							}).Error(err.Error())
+						}
+						// return nil, serror.New(errors.New("error getting default config"))
+						resultChan <- result{nil, serror.New(errors.New("error getting default config"))}
+
+					}
+				}
+
+				// Update config policy with defaults
+				cfgNode = cfgNode.ReverseMerge(defaults)
+				cp, err = c.GetConfigPolicy()
+				if err != nil {
+					pmLogger.WithFields(log.Fields{
+						"_block":         "load-plugin",
+						"plugin-type":    "collector",
+						"error":          err.Error(),
+						"plugin-name":    ap.Name(),
+						"plugin-version": ap.Version(),
+						"plugin-id":      ap.ID(),
+					}).Error("error in getting config policy")
+					// return nil, serror.New(err)
+					resultChan <- result{nil, serror.New(err)}
+				}
+				lPlugin.ConfigPolicy = cp
+			}
+
+			colClient := ap.client.(client.PluginCollectorClient)
+
+			cfg := plugin.ConfigType{
+				ConfigDataNode: cfgNode,
+			}
+
+			metricTypes, err := colClient.GetMetricTypes(cfg)
+			if err != nil {
+				pmLogger.WithFields(log.Fields{
+					"_block":      "load-plugin",
+					"plugin-type": "collector",
+					"error":       err.Error(),
+				}).Error("error in getting metric types")
+				// return nil, serror.New(err)
+				resultChan <- result{nil, serror.New(err)}
+			}
+
+			// Add metric types to metric catalog
+			for _, nmt := range metricTypes {
+				// If the version is 0 default it to the plugin version
+				// This honors the plugins explicit version but falls back
+				// to the plugin version as default
+				if nmt.Version() < 1 {
+					// Since we have to override version we convert to a internal struct
+					nmt = &metricType{
+						namespace:          nmt.Namespace(),
+						version:            resp.Meta.Version,
+						lastAdvertisedTime: nmt.LastAdvertisedTime(),
+						config:             nmt.Config(),
+						data:               nmt.Data(),
+						tags:               nmt.Tags(),
+						description:        nmt.Description(),
+						unit:               nmt.Unit(),
+					}
+				}
+				// We quit and throw an error on bad metric versions (<1)
+				// the is a safety catch otherwise the catalog will be corrupted
+				if nmt.Version() < 1 {
+					err := errors.New("Bad metric version from plugin")
+					pmLogger.WithFields(log.Fields{
+						"_block":           "load-plugin",
+						"plugin-name":      resp.Meta.Name,
+						"plugin-version":   resp.Meta.Version,
+						"plugin-type":      resp.Meta.Type.String(),
+						"plugin-path":      filepath.Base(lPlugin.Details.ExecPath),
+						"metric-namespace": nmt.Namespace(),
+						"metric-version":   nmt.Version(),
+						"error":            err.Error(),
+					}).Error("received metric with bad version")
+					// return nil, serror.New(err)
+					resultChan <- result{nil, serror.New(err)}
+				}
+
+				//Add standard tags
+				nmt = p.AddStandardAndWorkflowTags(nmt, nil)
+
+				if err := p.metricCatalog.AddLoadedMetricType(lPlugin, nmt); err != nil {
+					pmLogger.WithFields(log.Fields{
+						"_block":           "load-plugin",
+						"plugin-name":      resp.Meta.Name,
+						"plugin-version":   resp.Meta.Version,
+						"plugin-type":      resp.Meta.Type.String(),
+						"plugin-path":      filepath.Base(lPlugin.Details.ExecPath),
+						"metric-namespace": nmt.Namespace(),
+						"metric-version":   nmt.Version(),
+						"error":            err.Error(),
+					}).Error("error adding loaded metric type")
+					// return nil, serror.New(err)
+					resultChan <- result{nil, serror.New(err)}
 				}
 			}
-			// We quit and throw an error on bad metric versions (<1)
-			// the is a safety catch otherwise the catalog will be corrupted
-			if nmt.Version() < 1 {
-				err := errors.New("Bad metric version from plugin")
-				pmLogger.WithFields(log.Fields{
-					"_block":           "load-plugin",
-					"plugin-name":      resp.Meta.Name,
-					"plugin-version":   resp.Meta.Version,
-					"plugin-type":      resp.Meta.Type.String(),
-					"plugin-path":      filepath.Base(lPlugin.Details.ExecPath),
-					"metric-namespace": nmt.Namespace(),
-					"metric-version":   nmt.Version(),
-					"error":            err.Error(),
-				}).Error("received metric with bad version")
-				return nil, serror.New(err)
-			}
-
-			//Add standard tags
-			nmt = p.AddStandardAndWorkflowTags(nmt, nil)
-
-			if err := p.metricCatalog.AddLoadedMetricType(lPlugin, nmt); err != nil {
-				pmLogger.WithFields(log.Fields{
-					"_block":           "load-plugin",
-					"plugin-name":      resp.Meta.Name,
-					"plugin-version":   resp.Meta.Version,
-					"plugin-type":      resp.Meta.Type.String(),
-					"plugin-path":      filepath.Base(lPlugin.Details.ExecPath),
-					"metric-namespace": nmt.Namespace(),
-					"metric-version":   nmt.Version(),
-					"error":            err.Error(),
-				}).Error("error adding loaded metric type")
-				return nil, serror.New(err)
-			}
 		}
-	}
 
-	// Added so clients can adequately clean up connections
-	ap.client.Kill("Retrieved necessary plugin info")
-	err = ePlugin.Kill()
-	if err != nil {
-		pmLogger.WithFields(log.Fields{
-			"_block": "load-plugin",
-			"error":  err.Error(),
-		}).Error("load plugin error while killing plugin executable plugin")
-		return nil, serror.New(err)
-	}
+		// Added so clients can adequately clean up connections
+		ap.client.Kill("Retrieved necessary plugin info")
+		err = ePlugin.Kill()
+		if err != nil {
+			pmLogger.WithFields(log.Fields{
+				"_block": "load-plugin",
+				"error":  err.Error(),
+			}).Error("load plugin error while killing plugin executable plugin")
+			// return nil, serror.New(err)
+			resultChan <- result{nil, serror.New(err)}
+		}
 
-	if resp.State != plugin.PluginSuccess {
-		e := fmt.Errorf("Plugin loading did not succeed: %s\n", resp.ErrorMessage)
-		pmLogger.WithFields(log.Fields{
-			"_block":          "load-plugin",
-			"error":           e,
-			"plugin response": resp.ErrorMessage,
-		}).Error("load plugin error")
-		return nil, serror.New(e)
-	}
+		if resp.State != plugin.PluginSuccess {
+			e := fmt.Errorf("Plugin loading did not succeed: %s\n", resp.ErrorMessage)
+			pmLogger.WithFields(log.Fields{
+				"_block":          "load-plugin",
+				"error":           e,
+				"plugin response": resp.ErrorMessage,
+			}).Error("load plugin error")
+			// return nil, serror.New(e)
+			resultChan <- result{nil, serror.New(err)}
+		}
 
-	aErr := p.loadedPlugins.add(lPlugin)
-	if aErr != nil {
-		pmLogger.WithFields(log.Fields{
-			"_block": "load-plugin",
-			"error":  aErr,
-		}).Error("load plugin error while adding loaded plugin to load plugins collection")
-		return nil, aErr
-	}
+		aErr := p.loadedPlugins.add(lPlugin)
+		if aErr != nil {
+			pmLogger.WithFields(log.Fields{
+				"_block": "load-plugin",
+				"error":  aErr,
+			}).Error("load plugin error while adding loaded plugin to load plugins collection")
+			// return nil, aErr
+			resultChan <- result{nil, aErr}
+		}
 
-	return lPlugin, nil
+		// return lPlugin, nil
+		resultChan <- result{lPlugin, nil}
+	}()
+
+	select {
+	case results := <-resultChan:
+		log.Debugln("results received!!!!!!!!!!!!!!!!!!!!!!")
+		return results.loadedPlugin, results.SnapError
+	case <-time.After(time.Second * time.Duration(p.pluginLoadTimeout)):
+		log.Debugln("Timed out !!!!!!!!!!!!!!!!!!!!!!!!!!")
+		e := serror.New(errors.New("timed out"))
+		return nil, e
+	}
 }
 
 // UnloadPlugin unloads a plugin from the LoadedPlugins table

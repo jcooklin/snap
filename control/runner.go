@@ -163,7 +163,15 @@ func (r *runner) Stop() []error {
 }
 
 func (r *runner) startPlugin(p executablePlugin) (*availablePlugin, error) {
-	resp, err := p.Run(time.Second * time.Duration(r.pluginLoadTimeout))
+	log.Debugf("!!!! pluginLoadTimeout=%v", r.pluginLoadTimeout)
+	duration := time.Second * time.Duration(r.pluginLoadTimeout)
+	log.Debugf("!!!! duration=%v", duration)
+	resp, err := p.Run(duration)
+	// timeoutDuration, err := time.ParseDuration(fmt.Sprintf("%is", r.pluginLoadTimeout))
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// resp, err := p.Run(timeoutDuration)
 	if err != nil {
 		e := errors.New("error starting plugin: " + err.Error())
 		runnerLog.WithFields(log.Fields{
