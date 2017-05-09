@@ -41,6 +41,7 @@ import (
 
 	"github.com/intelsdi-x/snap/mgmt/rest/v1"
 
+	"github.com/intelsdi-x/snap/core"
 	"github.com/intelsdi-x/snap/mgmt/rest/v1/rbody"
 )
 
@@ -87,14 +88,6 @@ func parseURL(url string) error {
 		return fmt.Errorf("URL %s is not in the format of http(s)://<ip>:<port>", url)
 	}
 	return nil
-}
-
-// Checks if string is URL
-func isURL(url string) bool {
-	if !govalidator.IsURL(url) || !strings.HasPrefix(url, "http") {
-		return false
-	}
-	return true
 }
 
 type metaOp func(c *Client)
@@ -306,7 +299,7 @@ func httpRespToAPIResp(rsp *http.Response) (*rbody.APIResponse, error) {
 }
 
 func (c *Client) pluginUploadRequest(pluginPaths []string) (*rbody.APIResponse, error) {
-	if isURL(pluginPaths[0]) {
+	if core.IsUri(pluginPaths[0]) {
 		if _, err := url.ParseRequestURI(pluginPaths[0]); err == nil {
 			req, err := http.NewRequest(
 				"POST",

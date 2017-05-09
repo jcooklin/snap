@@ -163,7 +163,6 @@ func (l *loadedPlugins) findLatest(typeName, name string) (*loadedPlugin, error)
 
 // the struct representing a plugin that is loaded into snap
 type pluginDetails struct {
-<<<<<<< HEAD
 	CheckSum     [sha256.Size]byte
 	Exec         []string
 	ExecPath     string
@@ -178,17 +177,6 @@ type pluginDetails struct {
 	CACertPaths  string
 	TLSEnabled   bool
 	Uri          *url.URL
-=======
-	CheckSum  [sha256.Size]byte
-	Exec      []string
-	ExecPath  string
-	IsPackage bool
-	Manifest  *schema.ImageManifest
-	Path      string
-	Signed    bool
-	Signature []byte
-	Uri       *url.URL
->>>>>>> Added additional error handling; added check for remote AvailablePlugin
 }
 
 type loadedPlugin struct {
