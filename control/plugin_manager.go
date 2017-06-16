@@ -716,7 +716,7 @@ func (p *pluginManager) UnloadPlugin(pl core.Plugin) (*loadedPlugin, serror.Snap
 	p.loadedPlugins.remove(plugin.Key())
 
 	// Remove any metrics from the catalog if this was a collector
-	if plugin.TypeName() == "collector" || plugin.TypeName() == core.StreamingCollectorPluginType.String() {
+	if plugin.TypeName() == core.CollectorPluginType.String() || plugin.TypeName() == core.StreamingCollectorPluginType.String() {
 		p.metricCatalog.RmUnloadedPluginMetrics(plugin)
 	}
 
